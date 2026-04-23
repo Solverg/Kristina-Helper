@@ -53,16 +53,16 @@ class Sidebar(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("sidebar")
-        self.setFixedWidth(220)
+        self.setFixedWidth(360)
         self._build_ui()
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 20, 12, 16)
         layout.setSpacing(4)
-        avatar_width = 168
-        avatar_height = 120
-        avatar_radius = 14
+        avatar_width = 300
+        avatar_height = 300
+        avatar_radius = 24
 
         # ── Аватар ────────────────────────────────────────────────────────────
         avatar_container = QWidget()
