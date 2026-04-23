@@ -53,14 +53,18 @@ class Sidebar(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("sidebar")
-        self.setFixedWidth(220)
+        self.setMinimumWidth(280)
+        self.setMaximumWidth(420)
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
+        self._avatar_path = os.path.join(ASSETS_DIR, "avatar.png")
+        self._avatar_radius = 24
+        self._avatar_label: QLabel | None = None
         self._build_ui()
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 20, 12, 16)
         layout.setSpacing(4)
-
         # ── Аватар ────────────────────────────────────────────────────────────
         avatar_container = QWidget()
         avatar_layout = QVBoxLayout(avatar_container)
@@ -68,32 +72,10 @@ class Sidebar(QWidget):
         avatar_layout.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         avatar_layout.setSpacing(8)
 
-        avatar_label = QLabel()
-        avatar_path = os.path.join(ASSETS_DIR, "avatar.png")
-        if os.path.exists(avatar_path):
-            pixmap = QPixmap(avatar_path).scaled(
-                80, 80,
-                Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-                Qt.TransformationMode.SmoothTransformation
-            )
-            # Круглая маска
-            from PyQt6.QtGui import QPainter, QBrush, QColor
-            from PyQt6.QtCore import QRect
-            rounded = QPixmap(80, 80)
-            rounded.fill(Qt.GlobalColor.transparent)
-            painter = QPainter(rounded)
-            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-            painter.setBrush(QBrush(pixmap))
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.drawEllipse(QRect(0, 0, 80, 80))
-            painter.end()
-            avatar_label.setPixmap(rounded)
-        else:
-            avatar_label.setText("👩‍💻")
-            avatar_label.setStyleSheet("font-size: 48px;")
-
-        avatar_label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        avatar_layout.addWidget(avatar_label)
+        self._avatar_label = QLabel()
+        self._avatar_label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        avatar_layout.addWidget(self._avatar_label)
+        self._update_avatar()
 
         name_label = QLabel("Kristina Helper")
         name_label.setObjectName("logo_label")
@@ -134,6 +116,49 @@ class Sidebar(QWidget):
         )
         self._status_dot.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         layout.addWidget(self._status_dot)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._update_avatar()
+
+    def _update_avatar(self):
+        if self._avatar_label is None:
+            return
+
+        avatar_side = max(180, min(300, self.width() - 40))
+        self._avatar_label.setFixedSize(avatar_side, avatar_side)
+
+        if os.path.exists(self._avatar_path):
+            pixmap = QPixmap(self._avatar_path).scaled(
+                avatar_side,
+                avatar_side,
+                Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+
+            from PyQt6.QtGui import QPainter, QPainterPath
+            from PyQt6.QtCore import QRectF
+            rounded = QPixmap(avatar_side, avatar_side)
+            rounded.fill(Qt.GlobalColor.transparent)
+            painter = QPainter(rounded)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            path = QPainterPath()
+            path.addRoundedRect(
+                QRectF(0, 0, avatar_side, avatar_side),
+                self._avatar_radius,
+                self._avatar_radius,
+            )
+            painter.setClipPath(path)
+            painter.drawPixmap(0, 0, pixmap)
+            painter.end()
+            self._avatar_label.setPixmap(rounded)
+            self._avatar_label.setText("")
+            self._avatar_label.setStyleSheet("")
+        else:
+            font_size = max(56, int(avatar_side * 0.32))
+            self._avatar_label.setPixmap(QPixmap())
+            self._avatar_label.setText("👩‍💻")
+            self._avatar_label.setStyleSheet(f"font-size: {font_size}px;")
 
     def get_buttons(self) -> list[NavButton]:
         return self._nav_buttons
@@ -202,6 +227,7 @@ class MainWindow(QMainWindow):
 
         # Выбрать первую страницу
         self._select_page(0)
+        self._update_sidebar_width()
 
     def _connect_signals(self):
         # Навигация
@@ -219,6 +245,14 @@ class MainWindow(QMainWindow):
         self._stack.setCurrentIndex(index)
         for i, btn in enumerate(self._sidebar.get_buttons()):
             btn.set_active(i == index)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._update_sidebar_width()
+
+    def _update_sidebar_width(self):
+        sidebar_width = max(280, min(420, int(self.width() * 0.3)))
+        self._sidebar.setFixedWidth(sidebar_width)
 
     def _start_monitoring(self):
         interval = self.settings.get("scan_interval_sec", 5) * 1000

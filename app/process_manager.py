@@ -7,8 +7,7 @@ import psutil
 import json
 import os
 import logging
-from dataclasses import dataclass, field, asdict
-from typing import Optional
+from dataclasses import dataclass, asdict
 from PyQt6.QtCore import QObject, pyqtSignal, QTimer
 
 logger = logging.getLogger(__name__)
@@ -152,6 +151,11 @@ class ProcessManager(QObject):
         try:
             proc = psutil.Process(pid)
             proc.terminate()
+            try:
+                proc.wait(timeout=3)
+            except psutil.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=3)
             self._total_killed += 1
             # Увеличиваем счётчик в правиле
             key = name.lower()
@@ -161,7 +165,7 @@ class ProcessManager(QObject):
             self.process_killed.emit(name, pid)
             logger.info(f"Завершён процесс: {name} (PID {pid})")
             return True
-        except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.TimeoutExpired) as e:
             logger.warning(f"Не удалось завершить {pid}: {e}")
             return False
 
