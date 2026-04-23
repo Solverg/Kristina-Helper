@@ -7,11 +7,10 @@ import urllib.request
 import urllib.error
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
-    QTextEdit, QLineEdit, QPushButton,
+    QLineEdit, QPushButton,
     QLabel, QScrollArea, QFrame, QSizePolicy
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer
-from PyQt6.QtGui import QFont, QTextCursor
 
 # ── Поток для запроса к Gemini ────────────────────────────────────────────────
 
@@ -260,6 +259,8 @@ class AIChatWidget(QWidget):
         self._worker = GeminiWorker(api_key, self._history.copy(), text)
         self._worker.response_ready.connect(self._on_response)
         self._worker.error_occurred.connect(self._on_error)
+        self._worker.finished.connect(self._on_worker_finished)
+        self._worker.finished.connect(self._worker.deleteLater)
         self._worker.start()
 
         # Добавляем в историю
@@ -273,6 +274,9 @@ class AIChatWidget(QWidget):
     def _on_error(self, error: str):
         self._set_loading(False)
         self._add_bot_message(f"❌ Ошибка: {error}")
+
+    def _on_worker_finished(self):
+        self._worker = None
 
     # ── Вспомогательные ───────────────────────────────────────────────────────
 
