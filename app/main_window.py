@@ -53,13 +53,16 @@ class Sidebar(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("sidebar")
-        self.setFixedWidth(220)
+        self.setFixedWidth(360)
         self._build_ui()
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 20, 12, 16)
         layout.setSpacing(4)
+        avatar_width = 300
+        avatar_height = 300
+        avatar_radius = 24
 
         # ── Аватар ────────────────────────────────────────────────────────────
         avatar_container = QWidget()
@@ -72,26 +75,33 @@ class Sidebar(QWidget):
         avatar_path = os.path.join(ASSETS_DIR, "avatar.png")
         if os.path.exists(avatar_path):
             pixmap = QPixmap(avatar_path).scaled(
-                80, 80,
+                avatar_width, avatar_height,
                 Qt.AspectRatioMode.KeepAspectRatioByExpanding,
                 Qt.TransformationMode.SmoothTransformation
             )
-            # Круглая маска
-            from PyQt6.QtGui import QPainter, QBrush, QColor
-            from PyQt6.QtCore import QRect
-            rounded = QPixmap(80, 80)
+            # Прямоугольная маска со слегка скруглёнными углами
+            from PyQt6.QtGui import QPainter, QPainterPath
+            from PyQt6.QtCore import QRectF
+            rounded = QPixmap(avatar_width, avatar_height)
             rounded.fill(Qt.GlobalColor.transparent)
             painter = QPainter(rounded)
             painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-            painter.setBrush(QBrush(pixmap))
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.drawEllipse(QRect(0, 0, 80, 80))
+            path = QPainterPath()
+            path.addRoundedRect(
+                QRectF(0, 0, avatar_width, avatar_height),
+                avatar_radius,
+                avatar_radius,
+            )
+            painter.setClipPath(path)
+            painter.drawPixmap(0, 0, pixmap)
             painter.end()
             avatar_label.setPixmap(rounded)
         else:
             avatar_label.setText("👩‍💻")
-            avatar_label.setStyleSheet("font-size: 48px;")
+            avatar_label.setStyleSheet("font-size: 96px;")
+            avatar_label.setMinimumSize(avatar_width, avatar_height)
 
+        avatar_label.setFixedSize(avatar_width, avatar_height)
         avatar_label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         avatar_layout.addWidget(avatar_label)
 
