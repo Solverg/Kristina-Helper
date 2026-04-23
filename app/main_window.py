@@ -53,7 +53,7 @@ class Sidebar(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("sidebar")
-        self.setFixedWidth(360)
+        self.setFixedWidth(420)
         self._build_ui()
 
     def _build_ui(self):
