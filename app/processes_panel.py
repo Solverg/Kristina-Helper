@@ -218,19 +218,23 @@ class ProcessesPanel(QWidget):
         self._table.setHorizontalHeaderLabels(
             ["Имя", "PID", "Статус", "CPU %", "Память МБ", "Блокировка", "Описание"]
         )
-        self._table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        self._table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
         self._table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         self._table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         self._table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         self._table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
         self._table.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
         self._table.horizontalHeader().setSectionResizeMode(6, QHeaderView.ResizeMode.Stretch)
+        self._table.setColumnWidth(0, 220)
+        self._table.setWordWrap(True)
 
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._table.setAlternatingRowColors(False)
         self._table.verticalHeader().setVisible(False)
+        self._table.verticalHeader().setDefaultSectionSize(42)
+        self._table.verticalHeader().setMinimumSectionSize(38)
         self._table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._table.customContextMenuRequested.connect(self._show_context_menu)
         self._table.itemSelectionChanged.connect(self._on_selection_changed)
@@ -293,6 +297,8 @@ class ProcessesPanel(QWidget):
                 btn = QPushButton("✨ Узнать")
                 btn.setObjectName("action_btn")
                 btn.setStyleSheet("padding: 4px 8px; font-size: 11px;")
+                btn.setMinimumHeight(30)
+                btn.setMinimumWidth(96)
                 btn.clicked.connect(lambda _checked, name=p.name: self._fetch_description(name))
                 self._table.setCellWidget(row, 6, btn)
 
@@ -301,7 +307,37 @@ class ProcessesPanel(QWidget):
                     if self._table.item(row, col):
                         self._table.item(row, col).setForeground(QColor("#f85149"))
 
-        self._table.setRowHeight(0, 38) if processes else None
+            self._table.resizeRowToContents(row)
+
+    def _fetch_description(self, process_name: str):
+        api_key = self.settings.get("gemini_api_key", "").strip()
+        if not api_key or process_name in self._fetching_descriptions:
+            return
+
+        self._fetching_descriptions.add(process_name)
+        self._filter_table()
+
+        worker = ProcessDescriberWorker(api_key, process_name)
+        worker.description_ready.connect(self._on_description_ready)
+        worker.error_occurred.connect(self._on_description_error)
+        worker.finished.connect(lambda: self._on_worker_finished(worker))
+        worker.start()
+        self._active_workers.append(worker)
+
+    def _on_worker_finished(self, worker: ProcessDescriberWorker):
+        if worker in self._active_workers:
+            self._active_workers.remove(worker)
+        worker.deleteLater()
+
+    def _on_description_ready(self, process_name: str, description: str):
+        self._fetching_descriptions.discard(process_name)
+        if description:
+            self.pm.save_description(process_name, description)
+        self._manual_refresh()
+
+    def _on_description_error(self, process_name: str, _error: str):
+        self._fetching_descriptions.discard(process_name)
+        self._filter_table()
 
     def _fetch_description(self, process_name: str):
         api_key = self.settings.get("gemini_api_key", "").strip()
