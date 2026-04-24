@@ -275,6 +275,19 @@ class ProcessesPanel(QWidget):
         self._table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._table.setAlternatingRowColors(False)
+        self._table.setStyleSheet("""
+            QTreeWidget {
+                gridline-color: rgba(139, 148, 158, 0.18);
+            }
+            QTreeWidget::item {
+                border-bottom: 1px solid rgba(139, 148, 158, 0.14);
+                border-right: 1px solid rgba(139, 148, 158, 0.10);
+                padding: 3px 6px;
+            }
+            QHeaderView::section {
+                border-right: 1px solid rgba(139, 148, 158, 0.16);
+            }
+        """)
         self._table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._table.customContextMenuRequested.connect(self._show_context_menu)
         self._table.itemSelectionChanged.connect(self._on_selection_changed)
@@ -405,20 +418,29 @@ class ProcessesPanel(QWidget):
                 item, 6, self._build_description_cell(p.description, p.name)
             )
         else:
-            btn = QPushButton("✨ Узнать")
-            btn.setObjectName("desc_btn")
-            btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-            btn.setStyleSheet("""
-                QPushButton#desc_btn {
-                    background-color: #238636; color: #ffffff;
-                    border: none; border-radius: 8px; padding: 5px 10px;
-                    font-size: 12px; font-weight: 600; min-height: 24px; min-width: 104px;
-                }
-                QPushButton#desc_btn:hover { background-color: #2ea043; }
-            """)
-            btn.clicked.connect(lambda _checked, name=p.name: self._fetch_description(name))
-            self._table.setItemWidget(item, 6, btn)
+            self._table.setItemWidget(item, 6, self._build_ask_button_cell(p.name))
+
+    def _build_ask_button_cell(self, process_name: str) -> QWidget:
+        cell = QWidget()
+        layout = QHBoxLayout(cell)
+        layout.setContentsMargins(4, 3, 4, 3)
+        layout.setSpacing(0)
+
+        btn = QPushButton("✨ Узнать")
+        btn.setObjectName("desc_btn")
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        btn.setStyleSheet("""
+            QPushButton#desc_btn {
+                background-color: #238636; color: #ffffff;
+                border: none; border-radius: 8px; padding: 5px 10px;
+                font-size: 12px; font-weight: 600; min-height: 24px; min-width: 104px;
+            }
+            QPushButton#desc_btn:hover { background-color: #2ea043; }
+        """)
+        btn.clicked.connect(lambda _checked, name=process_name: self._fetch_description(name))
+        layout.addWidget(btn, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        return cell
 
     def _build_description_cell(self, text: str, process_name: str) -> QWidget:
         cell = QWidget()
