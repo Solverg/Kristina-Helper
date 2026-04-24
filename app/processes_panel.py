@@ -51,12 +51,21 @@ class ProcessDescriberWorker(QThread):
         parts = content.get("parts") or []
         return (parts[0] or {}).get("text", "") if parts else ""
 
+    @staticmethod
+    def _extract_text(result: dict) -> str:
+        candidates = result.get("candidates") or []
+        if not candidates:
+            return ""
+        content = (candidates[0] or {}).get("content") or {}
+        parts = content.get("parts") or []
+        return (parts[0] or {}).get("text", "") if parts else ""
+
     def run(self):
         prompt = (
-            "Ты системный эксперт Windows. Кратко объясни простыми словами, что это за процесс: "
+            "Ты системный эксперт Windows. Кратко объясни простыми словами, что это за процесс Windows: "
             f"'{self.process_name}'. "
-            "Ответь в 1-2 коротких предложениях на русском языке. "
-            "Если процесс малоизвестный, так и скажи и посоветуй проверить цифровую подпись файла."
+            "Ответь только одним коротким предложением на русском языке. "
+            "Без советов, предупреждений, лишних пояснений и дополнительных рекомендаций."
         )
         payload = {
             "contents": [{"role": "user", "parts": [{"text": prompt}]}],
@@ -295,6 +304,7 @@ class ProcessesPanel(QWidget):
         self._table.setRowCount(len(processes))
         for row, p in enumerate(processes):
             self._table.removeCellWidget(row, 6)
+            self._table.takeItem(row, 6)
             items = [
                 QTableWidgetItem(p.name),
                 QTableWidgetItem(str(p.pid)),
@@ -314,10 +324,11 @@ class ProcessesPanel(QWidget):
                 loading_item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
                 self._table.setItem(row, 6, loading_item)
             elif p.description:
-                desc_item = QTableWidgetItem(p.description)
-                desc_item.setToolTip(p.description)
-                desc_item.setTextAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
-                self._table.setItem(row, 6, desc_item)
+                self._table.setCellWidget(
+                    row,
+                    6,
+                    self._build_description_cell(p.description, p.name)
+                )
             else:
                 btn = QPushButton("✨ Узнать")
                 btn.setObjectName("desc_btn")
@@ -350,11 +361,51 @@ class ProcessesPanel(QWidget):
             self._table.resizeRowToContents(row)
             self._table.setRowHeight(row, max(self._table.rowHeight(row), 40))
 
-    def _fetch_description(self, process_name: str):
+    def _build_description_cell(self, text: str, process_name: str) -> QWidget:
+        cell = QWidget()
+        layout = QHBoxLayout(cell)
+        layout.setContentsMargins(4, 2, 4, 2)
+        layout.setSpacing(8)
+
+        text_label = QLabel(text)
+        text_label.setWordWrap(True)
+        text_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        text_label.setStyleSheet("color: #e6edf3; font-size: 12px;")
+        text_label.setToolTip(text)
+
+        refresh_btn = QPushButton("↻ Обновить")
+        refresh_btn.setObjectName("desc_refresh_btn")
+        refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        refresh_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        refresh_btn.setStyleSheet("""
+            QPushButton#desc_refresh_btn {
+                background-color: #30363d;
+                color: #e6edf3;
+                border: 1px solid #484f58;
+                border-radius: 8px;
+                padding: 4px 10px;
+                font-size: 11px;
+                font-weight: 600;
+                min-height: 24px;
+            }
+            QPushButton#desc_refresh_btn:hover {
+                background-color: #3b434c;
+            }
+        """)
+        refresh_btn.clicked.connect(lambda _checked, name=process_name: self._fetch_description(name, force=True))
+
+        layout.addWidget(text_label, stretch=1)
+        layout.addWidget(refresh_btn, stretch=0, alignment=Qt.AlignmentFlag.AlignTop)
+        return cell
+
+    def _fetch_description(self, process_name: str, force: bool = False):
         api_key = self.settings.get("gemini_api_key", "").strip()
         process_key = process_name.lower()
         if not api_key or process_key in self._fetching_descriptions:
             return
+
+        if force:
+            self.pm.save_description(process_name, "")
 
         self._fetching_descriptions.add(process_key)
         self._filter_table()
