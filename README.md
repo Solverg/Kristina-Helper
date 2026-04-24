@@ -1,97 +1,124 @@
 # Kristina Helper 🛡️
 
-Нативное Windows 11 приложение на PyQt6 для мониторинга и блокировки процессов с AI-чатом на Gemini.
+**Kristina Helper** — desktop-приложение на **PyQt6** для Windows: мониторит запущенные процессы, позволяет блокировать нежелательные `.exe` и помогает с объяснениями через встроенный AI-чат (Gemini).
 
 ---
 
-## Структура проекта
+## Что умеет
 
-```
-kristina_helper/
-│
-├── main.py                    # Точка входа
-├── requirements.txt
-│
-├── assets/
-│   └── avatar.png             # Иконка / аватар Кристины
-│
-└── app/
-    ├── __init__.py
-    ├── main_window.py         # Главное окно (QMainWindow)
-    ├── styles.py              # Глобальный QSS stylesheet
-    ├── process_manager.py     # Ядро: сканирование и завершение процессов
-    ├── processes_panel.py     # UI: таблица процессов + статистика
-    ├── ai_chat.py             # UI: чат с Gemini API
-    ├── settings_panel.py      # UI: панель настроек
-    ├── settings.py            # Менеджер настроек (JSON)
-    ├── autostart.py           # Автозапуск через Windows Registry
-    └── tray.py                # Системный трей
-```
+- Отображает список процессов (PID, статус, CPU, память).
+- Поддерживает блок-лист процессов и автоматически завершает заблокированные процессы по таймеру.
+- Показывает статистику: количество процессов, правил блокировки, завершённых процессов и активных заблокированных.
+- Позволяет быстро:
+  - завершить выбранный процесс;
+  - добавить/удалить процесс из блок-листа;
+  - запросить AI-объяснение по выбранному процессу.
+- Встроенный AI-чат «Кристина» (Gemini API) с историей диалога.
+- Кэширует AI-описания процессов локально.
+- Поддерживает сворачивание в системный трей.
+- Поддерживает автозапуск через реестр Windows.
+
+---
+
+## Стек
+
+- Python 3.11+
+- PyQt6
+- psutil
+- Gemini API (через `urllib`, без дополнительных HTTP-библиотек)
+
+Зависимости указаны в `requirements.txt`.
 
 ---
 
 ## Быстрый старт
 
 ```bash
-# 1. Установить зависимости
+# 1) Создать и активировать виртуальное окружение (рекомендуется)
+python -m venv .venv
+# Windows PowerShell:
+.\.venv\Scripts\Activate.ps1
+
+# 2) Установить зависимости
 pip install -r requirements.txt
 
-# 2. Запустить
+# 3) Запустить приложение
 python main.py
 ```
 
 ---
 
-## Архитектура
+## Настройка Gemini
 
-### ProcessManager (app/process_manager.py)
-- Использует `psutil` для получения списка процессов
-- Хранит правила блокировки в `~/.kristina_helper/blocked.json`
-- `QTimer` каждые N секунд вызывает `scan_and_enforce()`
-- При обнаружении заблокированного процесса — `proc.terminate()`
-- Сигналы Qt: `processes_updated`, `process_killed`, `stats_updated`
+1. Получите API-ключ в Google AI Studio: `https://aistudio.google.com/apikey`.
+2. Откройте в приложении раздел **Настройки** или строку API-ключа в разделе **AI-чат**.
+3. Вставьте ключ — он сохранится локально в пользовательских настройках.
 
-### MainWindow (app/main_window.py)
-- `QStackedWidget` — 3 страницы (Процессы / AI-чат / Настройки)
-- Кастомный Sidebar с круглым аватаром
-- Передаёт сигнал `ask_ai_about` из ProcessesPanel → AIChatWidget
-
-### AIChatWidget (app/ai_chat.py)
-- Gemini 2.5 Flash-Lite через REST API (`urllib`, без сторонних HTTP-библиотек)
-- `GeminiWorker(QThread)` — запросы в фоне, не блокируют UI
-- История диалога передаётся в каждый запрос (контекст)
-- System prompt: Кристина знает о процессах Windows
-
-### AutostartManager (app/autostart.py)
-- `winreg` — запись в `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`
-- Поддерживает режим разработки (python main.py) и PyInstaller сборку
-
-### TrayManager (app/tray.py)
-- `QSystemTrayIcon` с контекстным меню
-- `closeEvent` в MainWindow сворачивает в трей вместо выхода
+> Сейчас в коде для запросов используется модель `gemini-2.5-flash-lite`.
 
 ---
 
-## Сборка в .exe (PyInstaller)
+## Где хранятся данные
+
+Приложение использует каталог:
+
+- `%USERPROFILE%\.kristina_helper\` (Windows)
+
+Файлы:
+
+- `settings.json` — пользовательские настройки (API-ключ, интервал, UI-поведение).
+- `blocked.json` — правила блокировки процессов и счётчики завершений.
+- `descriptions.json` — локальный кэш AI-описаний процессов.
+
+---
+
+## Структура проекта
+
+```text
+.
+├── main.py
+├── requirements.txt
+├── assets/
+│   └── avatar.png
+└── app/
+    ├── ai_chat.py
+    ├── autostart.py
+    ├── main_window.py
+    ├── process_manager.py
+    ├── processes_panel.py
+    ├── settings.py
+    ├── settings_panel.py
+    ├── styles.py
+    └── tray.py
+```
+
+---
+
+## Как это работает (кратко)
+
+- `ProcessManager` сканирует процессы (`psutil.process_iter`) и по таймеру применяет правила блокировки.
+- `ProcessesPanel` отображает таблицу и элементы управления мониторингом.
+- `AIChatWidget` и `ProcessDescriberWorker` выполняют запросы к Gemini в фоновых потоках `QThread`.
+- `SettingsManager` хранит настройки в JSON в домашней директории пользователя.
+- `TrayManager` управляет иконкой и меню в системном трее.
+- `AutostartManager` включает/выключает автозапуск через `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`.
+
+---
+
+## Сборка в EXE (PyInstaller)
 
 ```bash
 pip install pyinstaller
 pyinstaller --onefile --windowed --icon=assets/avatar.png --name="KristinaHelper" main.py
 ```
 
----
-
-## Конфигурация
-
-Все данные хранятся в `%USERPROFILE%\.kristina_helper\`:
-- `settings.json` — настройки приложения
-- `blocked.json` — список заблокированных процессов
+Готовый файл будет в папке `dist/`.
 
 ---
 
-## Требования
+## Ограничения и примечания
 
-- Windows 10/11
-- Python 3.11+
-- PyQt6 >= 6.6
-- psutil >= 5.9
+- Основной сценарий рассчитан на **Windows 10/11**.
+- Для AI-функций требуется интернет и валидный Gemini API-ключ.
+- Некоторые системные процессы могут не завершаться из-за ограничений прав доступа.
+
