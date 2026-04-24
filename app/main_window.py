@@ -212,7 +212,7 @@ class MainWindow(QMainWindow):
         root_layout.addWidget(self._stack, stretch=1)
 
         # ── Страницы ──────────────────────────────────────────────────────────
-        self._processes_panel = ProcessesPanel(self.pm)
+        self._processes_panel = ProcessesPanel(self.pm, self.settings)
         self._chat_panel = AIChatWidget(self.settings)
         self._settings_panel = SettingsPanel(self.settings)
 
