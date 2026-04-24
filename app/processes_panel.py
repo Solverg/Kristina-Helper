@@ -2,16 +2,65 @@
 Kristina Helper — панель управления процессами.
 """
 
+import json
+import urllib.error
+import urllib.request
+
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QTableWidget, QTableWidgetItem,
     QLineEdit, QHeaderView, QAbstractItemView,
     QSlider, QFrame, QCheckBox, QMenu
 )
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal, QThread
 from PyQt6.QtGui import QColor, QFont, QAction
 
 from app.process_manager import ProcessManager, ProcessEntry
+
+
+class ProcessDescriberWorker(QThread):
+    """Фоновый запрос к Gemini для описания процесса."""
+
+    description_ready = pyqtSignal(str, str)  # process_name, description
+    error_occurred = pyqtSignal(str, str)     # process_name, error
+
+    API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
+    MODEL = "gemini-2.0-flash"
+
+    def __init__(self, api_key: str, process_name: str):
+        super().__init__()
+        self.api_key = api_key
+        self.process_name = process_name
+
+    def run(self):
+        prompt = (
+            "Ты системный эксперт Windows. Объясни человеческим, понятным языком "
+            f"в 1 короткое предложение: для чего нужен процесс '{self.process_name}'? "
+            "Не используй слишком сложные термины."
+        )
+        payload = {
+            "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+            "generationConfig": {"temperature": 0.2, "maxOutputTokens": 100},
+        }
+        url = f"{self.API_BASE}/{self.MODEL}:generateContent?key={self.api_key}"
+        try:
+            req = urllib.request.Request(
+                url,
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                result = json.loads(resp.read().decode("utf-8"))
+            text = (
+                result.get("candidates", [{}])[0]
+                .get("content", {})
+                .get("parts", [{}])[0]
+                .get("text", "")
+            )
+            self.description_ready.emit(self.process_name, text.strip())
+        except Exception as e:
+            self.error_occurred.emit(self.process_name, str(e))
 
 
 class StatsCard(QWidget):
@@ -49,10 +98,13 @@ class ProcessesPanel(QWidget):
 
     ask_ai_about = pyqtSignal(str)   # Запросить AI про этот процесс
 
-    def __init__(self, process_manager: ProcessManager, parent=None):
+    def __init__(self, process_manager: ProcessManager, settings_manager, parent=None):
         super().__init__(parent)
         self.pm = process_manager
+        self.settings = settings_manager
         self._all_processes: list[ProcessEntry] = []
+        self._fetching_descriptions: set[str] = set()
+        self._active_workers: list[ProcessDescriberWorker] = []
         self._build_ui()
         self._connect_signals()
 
@@ -162,22 +214,27 @@ class ProcessesPanel(QWidget):
 
         # ── Таблица процессов ─────────────────────────────────────────────────
         self._table = QTableWidget()
-        self._table.setColumnCount(6)
+        self._table.setColumnCount(7)
         self._table.setHorizontalHeaderLabels(
-            ["Имя", "PID", "Статус", "CPU %", "Память МБ", "Блокировка"]
+            ["Имя", "PID", "Статус", "CPU %", "Память МБ", "Блокировка", "Описание"]
         )
-        self._table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self._table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
         self._table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         self._table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         self._table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         self._table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
         self._table.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
+        self._table.horizontalHeader().setSectionResizeMode(6, QHeaderView.ResizeMode.Stretch)
+        self._table.setColumnWidth(0, 220)
+        self._table.setWordWrap(True)
 
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._table.setAlternatingRowColors(False)
         self._table.verticalHeader().setVisible(False)
+        self._table.verticalHeader().setDefaultSectionSize(42)
+        self._table.verticalHeader().setMinimumSectionSize(38)
         self._table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._table.customContextMenuRequested.connect(self._show_context_menu)
         self._table.itemSelectionChanged.connect(self._on_selection_changed)
@@ -226,12 +283,61 @@ class ProcessesPanel(QWidget):
                 item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
                 self._table.setItem(row, col, item)
 
+            if p.name in self._fetching_descriptions:
+                loading_item = QTableWidgetItem("⏳ Думает...")
+                loading_item.setForeground(QColor("#f0883e"))
+                loading_item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+                self._table.setItem(row, 6, loading_item)
+            elif p.description:
+                desc_item = QTableWidgetItem(p.description)
+                desc_item.setToolTip(p.description)
+                desc_item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+                self._table.setItem(row, 6, desc_item)
+            else:
+                btn = QPushButton("✨ Узнать")
+                btn.setObjectName("action_btn")
+                btn.setStyleSheet("padding: 4px 8px; font-size: 11px;")
+                btn.setMinimumHeight(30)
+                btn.setMinimumWidth(96)
+                btn.clicked.connect(lambda _checked, name=p.name: self._fetch_description(name))
+                self._table.setCellWidget(row, 6, btn)
+
             if p.is_blocked:
-                for col in range(6):
+                for col in range(7):
                     if self._table.item(row, col):
                         self._table.item(row, col).setForeground(QColor("#f85149"))
 
-        self._table.setRowHeight(0, 38) if processes else None
+            self._table.resizeRowToContents(row)
+
+    def _fetch_description(self, process_name: str):
+        api_key = self.settings.get("gemini_api_key", "").strip()
+        if not api_key or process_name in self._fetching_descriptions:
+            return
+
+        self._fetching_descriptions.add(process_name)
+        self._filter_table()
+
+        worker = ProcessDescriberWorker(api_key, process_name)
+        worker.description_ready.connect(self._on_description_ready)
+        worker.error_occurred.connect(self._on_description_error)
+        worker.finished.connect(lambda: self._on_worker_finished(worker))
+        worker.start()
+        self._active_workers.append(worker)
+
+    def _on_worker_finished(self, worker: ProcessDescriberWorker):
+        if worker in self._active_workers:
+            self._active_workers.remove(worker)
+        worker.deleteLater()
+
+    def _on_description_ready(self, process_name: str, description: str):
+        self._fetching_descriptions.discard(process_name)
+        if description:
+            self.pm.save_description(process_name, description)
+        self._manual_refresh()
+
+    def _on_description_error(self, process_name: str, _error: str):
+        self._fetching_descriptions.discard(process_name)
+        self._filter_table()
 
     def _on_selection_changed(self):
         has_selection = bool(self._table.selectedItems())

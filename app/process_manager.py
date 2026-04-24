@@ -13,6 +13,7 @@ from PyQt6.QtCore import QObject, pyqtSignal, QTimer
 logger = logging.getLogger(__name__)
 
 CONFIG_PATH = os.path.join(os.path.expanduser("~"), ".kristina_helper", "blocked.json")
+DESCRIPTIONS_PATH = os.path.join(os.path.expanduser("~"), ".kristina_helper", "descriptions.json")
 
 
 @dataclass
@@ -25,6 +26,7 @@ class ProcessEntry:
     cpu_percent: float
     memory_mb: float
     is_blocked: bool = False
+    description: str = ""
 
 
 @dataclass
@@ -51,6 +53,7 @@ class ProcessManager(QObject):
         super().__init__(parent)
 
         self.block_rules: dict[str, BlockRule] = {}  # name -> BlockRule
+        self.process_descriptions: dict[str, str] = {}
         self._last_processes: list[ProcessEntry] = []
         self._total_killed = 0
 
@@ -60,6 +63,7 @@ class ProcessManager(QObject):
         self._scan_interval_ms = 5000
 
         self._load_rules()
+        self._load_descriptions()
 
     # ── Конфигурация ────────────────────────────────────────────────────────
 
@@ -78,6 +82,32 @@ class ProcessManager(QObject):
                 logger.info(f"Загружено {len(self.block_rules)} правил")
         except Exception as e:
             logger.error(f"Ошибка загрузки правил: {e}")
+
+    def _load_descriptions(self):
+        """Загрузка описаний процессов из JSON."""
+        try:
+            if os.path.exists(DESCRIPTIONS_PATH):
+                with open(DESCRIPTIONS_PATH, "r", encoding="utf-8") as f:
+                    loaded = json.load(f)
+                if isinstance(loaded, dict):
+                    self.process_descriptions = {
+                        str(name).lower(): str(description)
+                        for name, description in loaded.items()
+                    }
+                    logger.info(f"Загружено описаний процессов: {len(self.process_descriptions)}")
+        except Exception as e:
+            logger.error(f"Ошибка загрузки описаний: {e}")
+
+    def save_description(self, process_name: str, description: str):
+        """Сохранить описание процесса в кэш и JSON."""
+        key = process_name.lower()
+        self.process_descriptions[key] = description
+        try:
+            self._ensure_config_dir()
+            with open(DESCRIPTIONS_PATH, "w", encoding="utf-8") as f:
+                json.dump(self.process_descriptions, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            logger.error(f"Ошибка сохранения описаний: {e}")
 
     def save_rules(self):
         """Сохранение правил в JSON."""
@@ -133,14 +163,16 @@ class ProcessManager(QObject):
             try:
                 info = proc.info
                 mem_mb = (info["memory_info"].rss / 1024 / 1024) if info["memory_info"] else 0
+                proc_name = info["name"] or ""
                 entries.append(ProcessEntry(
                     pid=info["pid"],
-                    name=info["name"] or "",
+                    name=proc_name,
                     exe=info["exe"] or "",
                     status=info["status"] or "",
                     cpu_percent=round(info["cpu_percent"] or 0, 1),
                     memory_mb=round(mem_mb, 1),
-                    is_blocked=self.is_blocked(info["name"] or ""),
+                    is_blocked=self.is_blocked(proc_name),
+                    description=self.process_descriptions.get(proc_name.lower(), ""),
                 ))
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 pass
