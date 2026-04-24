@@ -5,10 +5,11 @@ Kristina Helper — панель управления процессами.
 import json
 import urllib.error
 import urllib.request
+from collections import defaultdict
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QPushButton, QTableWidget, QTableWidgetItem,
+    QPushButton, QTreeWidget, QTreeWidgetItem,
     QLineEdit, QHeaderView, QAbstractItemView,
     QSlider, QFrame, QCheckBox, QMenu, QSizePolicy
 )
@@ -253,19 +254,19 @@ class ProcessesPanel(QWidget):
 
         layout.addLayout(controls_row)
 
-        # ── Таблица процессов ─────────────────────────────────────────────────
-        self._table = QTableWidget()
+        # ── Таблица процессов (Дерево) ────────────────────────────────────────
+        self._table = QTreeWidget()
         self._table.setColumnCount(7)
-        self._table.setHorizontalHeaderLabels(
+        self._table.setHeaderLabels(
             ["Имя", "PID", "Статус", "CPU %", "Память МБ", "Блокировка", "Описание"]
         )
-        self._table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
-        self._table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        self._table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        self._table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
-        self._table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
-        self._table.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
-        self._table.horizontalHeader().setSectionResizeMode(6, QHeaderView.ResizeMode.Stretch)
+        self._table.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
+        self._table.header().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        self._table.header().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        self._table.header().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        self._table.header().setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
+        self._table.header().setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
+        self._table.header().setSectionResizeMode(6, QHeaderView.ResizeMode.Stretch)
         self._table.setColumnWidth(0, 220)
         self._table.setWordWrap(True)
         self._table.setTextElideMode(Qt.TextElideMode.ElideNone)
@@ -274,9 +275,19 @@ class ProcessesPanel(QWidget):
         self._table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._table.setAlternatingRowColors(False)
-        self._table.verticalHeader().setVisible(False)
-        self._table.verticalHeader().setDefaultSectionSize(42)
-        self._table.verticalHeader().setMinimumSectionSize(38)
+        self._table.setStyleSheet("""
+            QTreeWidget {
+                gridline-color: rgba(139, 148, 158, 0.18);
+            }
+            QTreeWidget::item {
+                border-bottom: 1px solid rgba(139, 148, 158, 0.14);
+                border-right: 1px solid rgba(139, 148, 158, 0.10);
+                padding: 3px 6px;
+            }
+            QHeaderView::section {
+                border-right: 1px solid rgba(139, 148, 158, 0.16);
+            }
+        """)
         self._table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._table.customContextMenuRequested.connect(self._show_context_menu)
         self._table.itemSelectionChanged.connect(self._on_selection_changed)
@@ -311,65 +322,125 @@ class ProcessesPanel(QWidget):
         self._populate_table(filtered)
 
     def _populate_table(self, processes: list[ProcessEntry]):
-        self._table.setRowCount(len(processes))
-        for row, p in enumerate(processes):
-            self._table.removeCellWidget(row, 6)
-            self._table.takeItem(row, 6)
-            items = [
-                QTableWidgetItem(p.name),
-                QTableWidgetItem(str(p.pid)),
-                QTableWidgetItem(p.status),
-                QTableWidgetItem(f"{p.cpu_percent:.1f}"),
-                QTableWidgetItem(f"{p.memory_mb:.1f}"),
-                QTableWidgetItem("🚫 Заблокирован" if p.is_blocked else ""),
-            ]
-            for col, item in enumerate(items):
-                item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
-                self._table.setItem(row, col, item)
+        # Сохраняем состояние раскрытых узлов по ключу (имя, путь)
+        expanded_groups = set()
+        for i in range(self._table.topLevelItemCount()):
+            item = self._table.topLevelItem(i)
+            if item.isExpanded():
+                proc_data = item.data(0, Qt.ItemDataRole.UserRole)
+                if isinstance(proc_data, ProcessEntry):
+                    expanded_groups.add((proc_data.name.lower(), (proc_data.exe or "").lower()))
 
-            process_key = p.name.lower()
-            if process_key in self._fetching_descriptions:
-                loading_item = QTableWidgetItem("⏳ Думает...")
-                loading_item.setForeground(QColor("#f0883e"))
-                loading_item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
-                self._table.setItem(row, 6, loading_item)
-            elif p.description:
-                self._table.setCellWidget(
-                    row,
-                    6,
-                    self._build_description_cell(p.description, p.name)
-                )
+        self._table.clear()
+
+        # Группируем процессы по имени И пути к исполняемому файлу
+        grouped = defaultdict(list)
+        for p in processes:
+            # Если процесс системный и путь недоступен, группируем по пустой строке
+            exe_path = p.exe if p.exe else "Неизвестный путь"
+            grouped[(p.name.lower(), exe_path.lower())].append(p)
+
+        # Сортируем группы по имени
+        for (_group_name, _group_exe), procs in sorted(grouped.items()):
+            total_cpu = sum(p.cpu_percent for p in procs)
+            total_mem = sum(p.memory_mb for p in procs)
+            is_blocked = any(p.is_blocked for p in procs)
+
+            rep = procs[0]
+            exe_display = rep.exe if rep.exe else "Путь недоступен"
+
+            # Если процесс всего один с таким именем и путем
+            if len(procs) == 1:
+                parent_item = QTreeWidgetItem([
+                    rep.name,
+                    str(rep.pid),
+                    rep.status,
+                    f"{rep.cpu_percent:.1f}",
+                    f"{rep.memory_mb:.1f}",
+                    "🚫 Заблокирован" if rep.is_blocked else "",
+                    ""
+                ])
+                parent_item.setToolTip(0, f"Путь: {exe_display}")
+                parent_item.setData(0, Qt.ItemDataRole.UserRole, rep)
+                self._table.addTopLevelItem(parent_item)
+                self._setup_item_ui(parent_item, rep)
+
+            # Если процессов несколько — стакаем
             else:
-                btn = QPushButton("✨ Узнать")
-                btn.setObjectName("desc_btn")
-                btn.setCursor(Qt.CursorShape.PointingHandCursor)
-                btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-                btn.setStyleSheet("""
-                    QPushButton#desc_btn {
-                        background-color: #238636;
-                        color: #ffffff;
-                        border: none;
-                        border-radius: 8px;
-                        padding: 5px 10px;
-                        font-size: 12px;
-                        font-weight: 600;
-                        min-height: 24px;
-                        min-width: 104px;
-                    }
-                    QPushButton#desc_btn:hover {
-                        background-color: #2ea043;
-                    }
-                """)
-                btn.clicked.connect(lambda _checked, name=p.name: self._fetch_description(name))
-                self._table.setCellWidget(row, 6, btn)
+                parent_item = QTreeWidgetItem([
+                    f"{rep.name} ({len(procs)})",
+                    "---",
+                    "Запущен",
+                    f"{total_cpu:.1f}",
+                    f"{total_mem:.1f}",
+                    "🚫 Заблокирован" if is_blocked else "",
+                    ""
+                ])
+                parent_item.setToolTip(0, f"Путь: {exe_display}")
+                parent_item.setData(0, Qt.ItemDataRole.UserRole, rep)
+                self._table.addTopLevelItem(parent_item)
+                self._setup_item_ui(parent_item, rep)
 
-            if p.is_blocked:
-                for col in range(7):
-                    if self._table.item(row, col):
-                        self._table.item(row, col).setForeground(QColor("#f85149"))
+                # Восстанавливаем раскрытие, если группа была открыта
+                if (rep.name.lower(), (rep.exe or "").lower()) in expanded_groups:
+                    parent_item.setExpanded(True)
 
-            self._table.resizeRowToContents(row)
-            self._table.setRowHeight(row, max(self._table.rowHeight(row), 40))
+                for p in sorted(procs, key=lambda x: x.memory_mb, reverse=True):
+                    child_item = QTreeWidgetItem([
+                        f"   ↳ {p.name}",
+                        str(p.pid),
+                        p.status,
+                        f"{p.cpu_percent:.1f}",
+                        f"{p.memory_mb:.1f}",
+                        "🚫" if p.is_blocked else "",
+                        ""
+                    ])
+                    child_item.setToolTip(0, f"Путь: {exe_display}")
+                    child_item.setData(0, Qt.ItemDataRole.UserRole, p)
+                    parent_item.addChild(child_item)
+
+                    if p.is_blocked:
+                        for col in range(7):
+                            child_item.setForeground(col, QColor("#f85149"))
+
+    def _setup_item_ui(self, item: QTreeWidgetItem, p: ProcessEntry):
+        """Устанавливает цвета и виджеты (описания, кнопки) для элемента дерева."""
+        if p.is_blocked:
+            for col in range(7):
+                item.setForeground(col, QColor("#f85149"))
+
+        process_key = p.name.lower()
+        if process_key in self._fetching_descriptions:
+            item.setText(6, "⏳ Думает...")
+            item.setForeground(6, QColor("#f0883e"))
+        elif p.description:
+            self._table.setItemWidget(
+                item, 6, self._build_description_cell(p.description, p.name)
+            )
+        else:
+            self._table.setItemWidget(item, 6, self._build_ask_button_cell(p.name))
+
+    def _build_ask_button_cell(self, process_name: str) -> QWidget:
+        cell = QWidget()
+        layout = QHBoxLayout(cell)
+        layout.setContentsMargins(4, 3, 4, 3)
+        layout.setSpacing(0)
+
+        btn = QPushButton("✨ Узнать")
+        btn.setObjectName("desc_btn")
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        btn.setStyleSheet("""
+            QPushButton#desc_btn {
+                background-color: #238636; color: #ffffff;
+                border: none; border-radius: 8px; padding: 5px 10px;
+                font-size: 12px; font-weight: 600; min-height: 24px; min-width: 104px;
+            }
+            QPushButton#desc_btn:hover { background-color: #2ea043; }
+        """)
+        btn.clicked.connect(lambda _checked, name=process_name: self._fetch_description(name))
+        layout.addWidget(btn, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        return cell
 
     def _build_description_cell(self, text: str, process_name: str) -> QWidget:
         cell = QWidget()
@@ -490,16 +561,13 @@ class ProcessesPanel(QWidget):
         selected = self._table.selectedItems()
         if not selected:
             return None
-        row = selected[0].row()
-        query = self._search_input.text().lower()
-        only_blocked = self._show_blocked_only.isChecked()
-        filtered = [
-            p for p in self._all_processes
-            if (not query or query in p.name.lower())
-            and (not only_blocked or p.is_blocked)
-        ]
-        if row < len(filtered):
-            return filtered[row]
+
+        item = selected[0]
+        process_data = item.data(0, Qt.ItemDataRole.UserRole)
+
+        if isinstance(process_data, ProcessEntry):
+            return process_data
+
         return None
 
     def _show_context_menu(self, pos):
