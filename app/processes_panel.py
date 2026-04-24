@@ -25,42 +25,71 @@ class ProcessDescriberWorker(QThread):
     error_occurred = pyqtSignal(str, str)     # process_name, error
 
     API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
-    MODEL = "gemini-2.0-flash"
+    MODEL_CANDIDATES = (
+        "gemini-3-flash-preview",
+        "gemini-2.5-flash",
+        "gemini-2.0-flash",
+    )
 
-    def __init__(self, api_key: str, process_name: str):
+    def __init__(self, api_key: str, process_name: str, preferred_model: str | None = None):
         super().__init__()
         self.api_key = api_key
         self.process_name = process_name
+        self.preferred_model = (preferred_model or "").strip()
+
+    @staticmethod
+    def _extract_text(result: dict) -> str:
+        candidates = result.get("candidates") or []
+        if not candidates:
+            return ""
+        content = (candidates[0] or {}).get("content") or {}
+        parts = content.get("parts") or []
+        return (parts[0] or {}).get("text", "") if parts else ""
 
     def run(self):
         prompt = (
-            "Ты системный эксперт Windows. Объясни человеческим, понятным языком "
-            f"в 1 короткое предложение: для чего нужен процесс '{self.process_name}'? "
-            "Не используй слишком сложные термины."
+            "Ты системный эксперт Windows. Кратко объясни простыми словами, что это за процесс: "
+            f"'{self.process_name}'. "
+            "Ответь в 1-2 коротких предложениях на русском языке. "
+            "Если процесс малоизвестный, так и скажи и посоветуй проверить цифровую подпись файла."
         )
         payload = {
             "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-            "generationConfig": {"temperature": 0.2, "maxOutputTokens": 100},
+            "generationConfig": {"temperature": 0.2, "maxOutputTokens": 140},
         }
-        url = f"{self.API_BASE}/{self.MODEL}:generateContent?key={self.api_key}"
-        try:
-            req = urllib.request.Request(
-                url,
-                data=json.dumps(payload).encode("utf-8"),
-                headers={"Content-Type": "application/json"},
-                method="POST",
-            )
-            with urllib.request.urlopen(req, timeout=15) as resp:
-                result = json.loads(resp.read().decode("utf-8"))
-            text = (
-                result.get("candidates", [{}])[0]
-                .get("content", {})
-                .get("parts", [{}])[0]
-                .get("text", "")
-            )
-            self.description_ready.emit(self.process_name, text.strip())
-        except Exception as e:
-            self.error_occurred.emit(self.process_name, str(e))
+
+        models = list(self.MODEL_CANDIDATES)
+        if self.preferred_model:
+            models = [self.preferred_model, *[m for m in models if m != self.preferred_model]]
+
+        last_error = None
+        for model in models:
+            url = f"{self.API_BASE}/{model}:generateContent?key={self.api_key}"
+            try:
+                req = urllib.request.Request(
+                    url,
+                    data=json.dumps(payload).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    result = json.loads(resp.read().decode("utf-8"))
+                text = self._extract_text(result).strip()
+                if text:
+                    self.description_ready.emit(self.process_name, text)
+                    return
+                last_error = "Пустой ответ модели."
+            except urllib.error.HTTPError as e:
+                body = e.read().decode("utf-8", errors="replace")
+                last_error = f"HTTP {e.code}: {body[:220]}"
+                if e.code in (400, 404):
+                    continue
+                break
+            except Exception as e:
+                last_error = str(e)
+                break
+
+        self.error_occurred.emit(self.process_name, last_error or "Не удалось получить описание процесса.")
 
 
 class StatsCard(QWidget):
@@ -272,6 +301,7 @@ class ProcessesPanel(QWidget):
     def _populate_table(self, processes: list[ProcessEntry]):
         self._table.setRowCount(len(processes))
         for row, p in enumerate(processes):
+            self._table.removeCellWidget(row, 6)
             items = [
                 QTableWidgetItem(p.name),
                 QTableWidgetItem(str(p.pid)),
@@ -334,7 +364,8 @@ class ProcessesPanel(QWidget):
         self._fetching_descriptions.add(process_name)
         self._filter_table()
 
-        worker = ProcessDescriberWorker(api_key, process_name)
+        preferred_model = self.settings.get("gemini_model", "gemini-3-flash-preview")
+        worker = ProcessDescriberWorker(api_key, process_name, preferred_model=preferred_model)
         worker.description_ready.connect(self._on_description_ready)
         worker.error_occurred.connect(self._on_description_error)
         worker.finished.connect(lambda: self._on_worker_finished(worker))
@@ -352,8 +383,12 @@ class ProcessesPanel(QWidget):
             self.pm.save_description(process_name, description)
         self._manual_refresh()
 
-    def _on_description_error(self, process_name: str, _error: str):
+    def _on_description_error(self, process_name: str, error: str):
         self._fetching_descriptions.discard(process_name)
+        self.pm.save_description(
+            process_name,
+            f"Не удалось получить описание автоматически ({error}). Нажми «✨ Спросить AI» для ручного уточнения."
+        )
         self._filter_table()
 
     def _on_selection_changed(self):

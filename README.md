@@ -57,7 +57,7 @@ python main.py
 - Передаёт сигнал `ask_ai_about` из ProcessesPanel → AIChatWidget
 
 ### AIChatWidget (app/ai_chat.py)
-- Gemini 2.0 Flash через REST API (`urllib`, без сторонних HTTP-библиотек)
+- Gemini 3 Flash Preview (с fallback на Gemini 2.5/2.0 Flash) через REST API (`urllib`, без сторонних HTTP-библиотек)
 - `GeminiWorker(QThread)` — запросы в фоне, не блокируют UI
 - История диалога передаётся в каждый запрос (контекст)
 - System prompt: Кристина знает о процессах Windows
