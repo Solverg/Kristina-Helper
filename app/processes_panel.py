@@ -27,10 +27,20 @@ class ProcessDescriberWorker(QThread):
     API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
     MODEL = "gemini-2.5-flash-lite"
 
-    def __init__(self, api_key: str, process_name: str):
+    def __init__(self, api_key: str, process_name: str, preferred_model: str | None = None):
         super().__init__()
         self.api_key = api_key
         self.process_name = process_name
+        self.preferred_model = (preferred_model or "").strip()
+
+    @staticmethod
+    def _extract_text(result: dict) -> str:
+        candidates = result.get("candidates") or []
+        if not candidates:
+            return ""
+        content = (candidates[0] or {}).get("content") or {}
+        parts = content.get("parts") or []
+        return (parts[0] or {}).get("text", "") if parts else ""
 
     @staticmethod
     def _extract_text(result: dict) -> str:
@@ -349,7 +359,8 @@ class ProcessesPanel(QWidget):
         self._fetching_descriptions.add(process_key)
         self._filter_table()
 
-        worker = ProcessDescriberWorker(api_key, process_name)
+        preferred_model = self.settings.get("gemini_model", "gemini-3-flash-preview")
+        worker = ProcessDescriberWorker(api_key, process_name, preferred_model=preferred_model)
         worker.description_ready.connect(self._on_description_ready)
         worker.error_occurred.connect(self._on_description_error)
         worker.finished.connect(lambda: self._on_worker_finished(worker))
