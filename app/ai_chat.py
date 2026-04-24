@@ -23,11 +23,28 @@ class GeminiWorker(QThread):
     MODEL = "gemini-2.5-flash-lite"
     API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 
-    def __init__(self, api_key: str, history: list[dict], user_message: str):
+    def __init__(self, api_key: str, history: list[dict], user_message: str, preferred_model: str | None = None):
         super().__init__()
         self.api_key = api_key
         self.history = history
         self.user_message = user_message
+        self.preferred_model = (preferred_model or "").strip()
+
+    def _extract_text(self, result: dict) -> str:
+        candidates = result.get("candidates") or []
+        if not candidates:
+            return ""
+        content = (candidates[0] or {}).get("content") or {}
+        parts = content.get("parts") or []
+        return (parts[0] or {}).get("text", "") if parts else ""
+
+    def _extract_text(self, result: dict) -> str:
+        candidates = result.get("candidates") or []
+        if not candidates:
+            return ""
+        content = (candidates[0] or {}).get("content") or {}
+        parts = content.get("parts") or []
+        return (parts[0] or {}).get("text", "") if parts else ""
 
     def _extract_text(self, result: dict) -> str:
         candidates = result.get("candidates") or []
@@ -256,7 +273,8 @@ class AIChatWidget(QWidget):
         self._add_user_message(text)
         self._set_loading(True)
 
-        self._worker = GeminiWorker(api_key, self._history.copy(), text)
+        preferred_model = self.settings.get("gemini_model", "gemini-3-flash-preview")
+        self._worker = GeminiWorker(api_key, self._history.copy(), text, preferred_model=preferred_model)
         self._worker.response_ready.connect(self._on_response)
         self._worker.error_occurred.connect(self._on_error)
         self._worker.finished.connect(self._on_worker_finished)
@@ -268,6 +286,7 @@ class AIChatWidget(QWidget):
 
     def _on_response(self, text: str, model: str):
         self._set_loading(False)
+        self.settings.set("gemini_model", model)
         self._history.append({"role": "model", "text": text})
         self._model_subtitle.setText(model)
         self._add_bot_message(text)
