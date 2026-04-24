@@ -20,12 +20,7 @@ class GeminiWorker(QThread):
     response_ready = pyqtSignal(str, str)
     error_occurred = pyqtSignal(str)
 
-    # Актуальные модели по приоритету: preview -> stable -> legacy fallback
-    MODEL_CANDIDATES = (
-        "gemini-3-flash-preview",
-        "gemini-2.5-flash",
-        "gemini-2.0-flash",
-    )
+    MODEL = "gemini-2.5-flash-lite"
     API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 
     def __init__(self, api_key: str, history: list[dict], user_message: str, preferred_model: str | None = None):
@@ -34,6 +29,14 @@ class GeminiWorker(QThread):
         self.history = history
         self.user_message = user_message
         self.preferred_model = (preferred_model or "").strip()
+
+    def _extract_text(self, result: dict) -> str:
+        candidates = result.get("candidates") or []
+        if not candidates:
+            return ""
+        content = (candidates[0] or {}).get("content") or {}
+        parts = content.get("parts") or []
+        return (parts[0] or {}).get("text", "") if parts else ""
 
     def _extract_text(self, result: dict) -> str:
         candidates = result.get("candidates") or []
@@ -75,41 +78,21 @@ class GeminiWorker(QThread):
                 }
             }
 
-            models = list(self.MODEL_CANDIDATES)
-            if self.preferred_model:
-                models = [self.preferred_model, *[m for m in models if m != self.preferred_model]]
-
-            last_http_error = None
-            for model in models:
-                url = f"{self.API_BASE}/{model}:generateContent?key={self.api_key}"
-                data = json.dumps(payload).encode("utf-8")
-                req = urllib.request.Request(
-                    url,
-                    data=data,
-                    headers={"Content-Type": "application/json"},
-                    method="POST"
-                )
-                try:
-                    with urllib.request.urlopen(req, timeout=30) as resp:
-                        result = json.loads(resp.read().decode("utf-8"))
-                    text = self._extract_text(result).strip()
-                    if text:
-                        self.response_ready.emit(text, model)
-                        return
-                    self.error_occurred.emit("Пустой ответ модели. Попробуй переформулировать вопрос.")
-                    return
-                except urllib.error.HTTPError as e:
-                    body = e.read().decode("utf-8", errors="replace")
-                    last_http_error = f"HTTP {e.code}: {body[:300]}"
-                    if e.code in (400, 404):
-                        continue
-                    self.error_occurred.emit(last_http_error)
-                    return
-
-            if last_http_error:
-                self.error_occurred.emit(last_http_error)
-            else:
-                self.error_occurred.emit("Не удалось получить ответ от Gemini API.")
+            url = f"{self.API_BASE}/{self.MODEL}:generateContent?key={self.api_key}"
+            data = json.dumps(payload).encode("utf-8")
+            req = urllib.request.Request(
+                url,
+                data=data,
+                headers={"Content-Type": "application/json"},
+                method="POST"
+            )
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                result = json.loads(resp.read().decode("utf-8"))
+            text = self._extract_text(result).strip()
+            if text:
+                self.response_ready.emit(text, self.MODEL)
+                return
+            self.error_occurred.emit("Пустой ответ модели. Попробуй переформулировать вопрос.")
 
         except urllib.error.HTTPError as e:
             body = e.read().decode("utf-8", errors="replace")
@@ -187,7 +170,7 @@ class AIChatWidget(QWidget):
 
         title = QLabel("✨ AI-чат — Кристина")
         title.setObjectName("section_title")
-        self._model_subtitle = QLabel("Gemini 3 Flash Preview")
+        self._model_subtitle = QLabel("gemini-2.5-flash-lite")
         self._model_subtitle.setObjectName("section_subtitle")
 
         self._status_badge = QLabel("● Готова")
