@@ -17,18 +17,31 @@ from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer
 class GeminiWorker(QThread):
     """Отправляет запрос к Gemini API в фоновом потоке."""
 
-    response_ready = pyqtSignal(str)
+    response_ready = pyqtSignal(str, str)
     error_occurred = pyqtSignal(str)
 
-    # Модель: gemini-2.0-flash — бесплатный tier
-    MODEL = "gemini-2.0-flash"
+    # Актуальные модели по приоритету: preview -> stable -> legacy fallback
+    MODEL_CANDIDATES = (
+        "gemini-3-flash-preview",
+        "gemini-2.5-flash",
+        "gemini-2.0-flash",
+    )
     API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 
-    def __init__(self, api_key: str, history: list[dict], user_message: str):
+    def __init__(self, api_key: str, history: list[dict], user_message: str, preferred_model: str | None = None):
         super().__init__()
         self.api_key = api_key
         self.history = history
         self.user_message = user_message
+        self.preferred_model = (preferred_model or "").strip()
+
+    def _extract_text(self, result: dict) -> str:
+        candidates = result.get("candidates") or []
+        if not candidates:
+            return ""
+        content = (candidates[0] or {}).get("content") or {}
+        parts = content.get("parts") or []
+        return (parts[0] or {}).get("text", "") if parts else ""
 
     def run(self):
         try:
@@ -58,32 +71,45 @@ class GeminiWorker(QThread):
                 },
                 "generationConfig": {
                     "temperature": 0.7,
-                    "maxOutputTokens": 1024,
+                    "maxOutputTokens": 2048,
                 }
             }
 
-            url = f"{self.API_BASE}/{self.MODEL}:generateContent?key={self.api_key}"
-            data = json.dumps(payload).encode("utf-8")
+            models = list(self.MODEL_CANDIDATES)
+            if self.preferred_model:
+                models = [self.preferred_model, *[m for m in models if m != self.preferred_model]]
 
-            req = urllib.request.Request(
-                url,
-                data=data,
-                headers={"Content-Type": "application/json"},
-                method="POST"
-            )
+            last_http_error = None
+            for model in models:
+                url = f"{self.API_BASE}/{model}:generateContent?key={self.api_key}"
+                data = json.dumps(payload).encode("utf-8")
+                req = urllib.request.Request(
+                    url,
+                    data=data,
+                    headers={"Content-Type": "application/json"},
+                    method="POST"
+                )
+                try:
+                    with urllib.request.urlopen(req, timeout=30) as resp:
+                        result = json.loads(resp.read().decode("utf-8"))
+                    text = self._extract_text(result).strip()
+                    if text:
+                        self.response_ready.emit(text, model)
+                        return
+                    self.error_occurred.emit("Пустой ответ модели. Попробуй переформулировать вопрос.")
+                    return
+                except urllib.error.HTTPError as e:
+                    body = e.read().decode("utf-8", errors="replace")
+                    last_http_error = f"HTTP {e.code}: {body[:300]}"
+                    if e.code in (400, 404):
+                        continue
+                    self.error_occurred.emit(last_http_error)
+                    return
 
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                result = json.loads(resp.read().decode("utf-8"))
-
-            # Извлекаем текст ответа
-            text = (
-                result
-                .get("candidates", [{}])[0]
-                .get("content", {})
-                .get("parts", [{}])[0]
-                .get("text", "")
-            )
-            self.response_ready.emit(text.strip())
+            if last_http_error:
+                self.error_occurred.emit(last_http_error)
+            else:
+                self.error_occurred.emit("Не удалось получить ответ от Gemini API.")
 
         except urllib.error.HTTPError as e:
             body = e.read().decode("utf-8", errors="replace")
@@ -161,15 +187,15 @@ class AIChatWidget(QWidget):
 
         title = QLabel("✨ AI-чат — Кристина")
         title.setObjectName("section_title")
-        subtitle = QLabel("Gemini 2.0 Flash")
-        subtitle.setObjectName("section_subtitle")
+        self._model_subtitle = QLabel("Gemini 3 Flash Preview")
+        self._model_subtitle.setObjectName("section_subtitle")
 
         self._status_badge = QLabel("● Готова")
         self._status_badge.setStyleSheet("color: #3fb950; font-size: 12px;")
 
         header_layout.addWidget(title)
         header_layout.addSpacing(8)
-        header_layout.addWidget(subtitle)
+        header_layout.addWidget(self._model_subtitle)
         header_layout.addStretch()
         header_layout.addWidget(self._status_badge)
         layout.addWidget(header)
@@ -256,7 +282,8 @@ class AIChatWidget(QWidget):
         self._add_user_message(text)
         self._set_loading(True)
 
-        self._worker = GeminiWorker(api_key, self._history.copy(), text)
+        preferred_model = self.settings.get("gemini_model", "gemini-3-flash-preview")
+        self._worker = GeminiWorker(api_key, self._history.copy(), text, preferred_model=preferred_model)
         self._worker.response_ready.connect(self._on_response)
         self._worker.error_occurred.connect(self._on_error)
         self._worker.finished.connect(self._on_worker_finished)
@@ -266,9 +293,11 @@ class AIChatWidget(QWidget):
         # Добавляем в историю
         self._history.append({"role": "user", "text": text})
 
-    def _on_response(self, text: str):
+    def _on_response(self, text: str, model: str):
         self._set_loading(False)
+        self.settings.set("gemini_model", model)
         self._history.append({"role": "model", "text": text})
+        self._model_subtitle.setText(model)
         self._add_bot_message(text)
 
     def _on_error(self, error: str):
