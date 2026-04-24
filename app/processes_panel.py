@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QTableWidget, QTableWidgetItem,
     QLineEdit, QHeaderView, QAbstractItemView,
-    QSlider, QFrame, QCheckBox, QMenu
+    QSlider, QFrame, QCheckBox, QMenu, QSizePolicy
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QThread
 from PyQt6.QtGui import QColor, QFont, QAction
@@ -227,6 +227,7 @@ class ProcessesPanel(QWidget):
         self._table.horizontalHeader().setSectionResizeMode(6, QHeaderView.ResizeMode.Stretch)
         self._table.setColumnWidth(0, 220)
         self._table.setWordWrap(True)
+        self._table.setTextElideMode(Qt.TextElideMode.ElideNone)
 
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
@@ -291,14 +292,29 @@ class ProcessesPanel(QWidget):
             elif p.description:
                 desc_item = QTableWidgetItem(p.description)
                 desc_item.setToolTip(p.description)
-                desc_item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+                desc_item.setTextAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
                 self._table.setItem(row, 6, desc_item)
             else:
                 btn = QPushButton("✨ Узнать")
-                btn.setObjectName("action_btn")
-                btn.setStyleSheet("padding: 4px 8px; font-size: 11px;")
-                btn.setMinimumHeight(30)
-                btn.setMinimumWidth(96)
+                btn.setObjectName("desc_btn")
+                btn.setCursor(Qt.CursorShape.PointingHandCursor)
+                btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+                btn.setStyleSheet("""
+                    QPushButton#desc_btn {
+                        background-color: #238636;
+                        color: #ffffff;
+                        border: none;
+                        border-radius: 8px;
+                        padding: 5px 10px;
+                        font-size: 12px;
+                        font-weight: 600;
+                        min-height: 24px;
+                        min-width: 104px;
+                    }
+                    QPushButton#desc_btn:hover {
+                        background-color: #2ea043;
+                    }
+                """)
                 btn.clicked.connect(lambda _checked, name=p.name: self._fetch_description(name))
                 self._table.setCellWidget(row, 6, btn)
 
@@ -308,36 +324,7 @@ class ProcessesPanel(QWidget):
                         self._table.item(row, col).setForeground(QColor("#f85149"))
 
             self._table.resizeRowToContents(row)
-
-    def _fetch_description(self, process_name: str):
-        api_key = self.settings.get("gemini_api_key", "").strip()
-        if not api_key or process_name in self._fetching_descriptions:
-            return
-
-        self._fetching_descriptions.add(process_name)
-        self._filter_table()
-
-        worker = ProcessDescriberWorker(api_key, process_name)
-        worker.description_ready.connect(self._on_description_ready)
-        worker.error_occurred.connect(self._on_description_error)
-        worker.finished.connect(lambda: self._on_worker_finished(worker))
-        worker.start()
-        self._active_workers.append(worker)
-
-    def _on_worker_finished(self, worker: ProcessDescriberWorker):
-        if worker in self._active_workers:
-            self._active_workers.remove(worker)
-        worker.deleteLater()
-
-    def _on_description_ready(self, process_name: str, description: str):
-        self._fetching_descriptions.discard(process_name)
-        if description:
-            self.pm.save_description(process_name, description)
-        self._manual_refresh()
-
-    def _on_description_error(self, process_name: str, _error: str):
-        self._fetching_descriptions.discard(process_name)
-        self._filter_table()
+            self._table.setRowHeight(row, max(self._table.rowHeight(row), 40))
 
     def _fetch_description(self, process_name: str):
         api_key = self.settings.get("gemini_api_key", "").strip()
