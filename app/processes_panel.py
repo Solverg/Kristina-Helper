@@ -25,23 +25,34 @@ class ProcessDescriberWorker(QThread):
     error_occurred = pyqtSignal(str, str)     # process_name, error
 
     API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
-    MODEL = "gemini-2.0-flash"
+    MODEL = "gemini-2.5-flash-lite"
 
     def __init__(self, api_key: str, process_name: str):
         super().__init__()
         self.api_key = api_key
         self.process_name = process_name
 
+    @staticmethod
+    def _extract_text(result: dict) -> str:
+        candidates = result.get("candidates") or []
+        if not candidates:
+            return ""
+        content = (candidates[0] or {}).get("content") or {}
+        parts = content.get("parts") or []
+        return (parts[0] or {}).get("text", "") if parts else ""
+
     def run(self):
         prompt = (
-            "Ты системный эксперт Windows. Объясни человеческим, понятным языком "
-            f"в 1 короткое предложение: для чего нужен процесс '{self.process_name}'? "
-            "Не используй слишком сложные термины."
+            "Ты системный эксперт Windows. Кратко объясни простыми словами, что это за процесс: "
+            f"'{self.process_name}'. "
+            "Ответь в 1-2 коротких предложениях на русском языке. "
+            "Если процесс малоизвестный, так и скажи и посоветуй проверить цифровую подпись файла."
         )
         payload = {
             "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-            "generationConfig": {"temperature": 0.2, "maxOutputTokens": 100},
+            "generationConfig": {"temperature": 0.2, "maxOutputTokens": 140},
         }
+
         url = f"{self.API_BASE}/{self.MODEL}:generateContent?key={self.api_key}"
         try:
             req = urllib.request.Request(
@@ -52,13 +63,14 @@ class ProcessDescriberWorker(QThread):
             )
             with urllib.request.urlopen(req, timeout=15) as resp:
                 result = json.loads(resp.read().decode("utf-8"))
-            text = (
-                result.get("candidates", [{}])[0]
-                .get("content", {})
-                .get("parts", [{}])[0]
-                .get("text", "")
-            )
-            self.description_ready.emit(self.process_name, text.strip())
+            text = self._extract_text(result).strip()
+            if text:
+                self.description_ready.emit(self.process_name, text)
+                return
+            self.error_occurred.emit(self.process_name, "Пустой ответ модели.")
+        except urllib.error.HTTPError as e:
+            body = e.read().decode("utf-8", errors="replace")
+            self.error_occurred.emit(self.process_name, f"HTTP {e.code}: {body[:220]}")
         except Exception as e:
             self.error_occurred.emit(self.process_name, str(e))
 
@@ -272,6 +284,7 @@ class ProcessesPanel(QWidget):
     def _populate_table(self, processes: list[ProcessEntry]):
         self._table.setRowCount(len(processes))
         for row, p in enumerate(processes):
+            self._table.removeCellWidget(row, 6)
             items = [
                 QTableWidgetItem(p.name),
                 QTableWidgetItem(str(p.pid)),
@@ -284,7 +297,8 @@ class ProcessesPanel(QWidget):
                 item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
                 self._table.setItem(row, col, item)
 
-            if p.name in self._fetching_descriptions:
+            process_key = p.name.lower()
+            if process_key in self._fetching_descriptions:
                 loading_item = QTableWidgetItem("⏳ Думает...")
                 loading_item.setForeground(QColor("#f0883e"))
                 loading_item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
@@ -328,10 +342,11 @@ class ProcessesPanel(QWidget):
 
     def _fetch_description(self, process_name: str):
         api_key = self.settings.get("gemini_api_key", "").strip()
-        if not api_key or process_name in self._fetching_descriptions:
+        process_key = process_name.lower()
+        if not api_key or process_key in self._fetching_descriptions:
             return
 
-        self._fetching_descriptions.add(process_name)
+        self._fetching_descriptions.add(process_key)
         self._filter_table()
 
         worker = ProcessDescriberWorker(api_key, process_name)
@@ -347,13 +362,17 @@ class ProcessesPanel(QWidget):
         worker.deleteLater()
 
     def _on_description_ready(self, process_name: str, description: str):
-        self._fetching_descriptions.discard(process_name)
+        self._fetching_descriptions.discard(process_name.lower())
         if description:
             self.pm.save_description(process_name, description)
         self._manual_refresh()
 
-    def _on_description_error(self, process_name: str, _error: str):
-        self._fetching_descriptions.discard(process_name)
+    def _on_description_error(self, process_name: str, error: str):
+        self._fetching_descriptions.discard(process_name.lower())
+        self.pm.save_description(
+            process_name,
+            f"Не удалось получить описание автоматически ({error}). Нажми «✨ Спросить AI» для ручного уточнения."
+        )
         self._filter_table()
 
     def _on_selection_changed(self):
