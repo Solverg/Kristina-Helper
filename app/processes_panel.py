@@ -60,12 +60,22 @@ class ProcessDescriberWorker(QThread):
         parts = content.get("parts") or []
         return (parts[0] or {}).get("text", "") if parts else ""
 
+    @staticmethod
+    def _extract_text(result: dict) -> str:
+        candidates = result.get("candidates") or []
+        if not candidates:
+            return ""
+        content = (candidates[0] or {}).get("content") or {}
+        parts = content.get("parts") or []
+        return (parts[0] or {}).get("text", "") if parts else ""
+
     def run(self):
         prompt = (
-            "Ты системный эксперт Windows. Кратко объясни простыми словами, что это за процесс Windows: "
+            "Ты системный эксперт Windows. Кратко объясни назначение процесса Windows "
             f"'{self.process_name}'. "
-            "Ответь только одним коротким предложением на русском языке. "
-            "Без советов, предупреждений, лишних пояснений и дополнительных рекомендаций."
+            "Ответь одним коротким предложением на русском языке. "
+            "Начни сразу с сути, без повторения имени процесса, без конструкции «это ...», "
+            "без советов, предупреждений и дополнительных пояснений."
         )
         payload = {
             "contents": [{"role": "user", "parts": [{"text": prompt}]}],
@@ -439,12 +449,12 @@ class ProcessesPanel(QWidget):
 
     def _on_selection_changed(self):
         has_selection = bool(self._table.selectedItems())
-        self._btn_kill.setEnabled(has_selection)
-        self._btn_add_block.setEnabled(has_selection)
-        self._btn_ask_ai.setEnabled(has_selection)
+        p = self._get_selected_process() if has_selection else None
+        self._btn_kill.setEnabled(bool(p and p.is_running and p.pid > 0))
+        self._btn_add_block.setEnabled(bool(p))
+        self._btn_ask_ai.setEnabled(bool(p))
 
         # Обновляем текст кнопки блокировки
-        p = self._get_selected_process()
         if p:
             if p.is_blocked:
                 self._btn_add_block.setText("− Разблокировать")
@@ -455,7 +465,7 @@ class ProcessesPanel(QWidget):
 
     def _kill_selected(self):
         p = self._get_selected_process()
-        if p:
+        if p and p.is_running and p.pid > 0:
             self.pm.kill_process(p.pid, p.name)
             self._manual_refresh()
 

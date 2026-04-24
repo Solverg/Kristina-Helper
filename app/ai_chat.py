@@ -54,6 +54,14 @@ class GeminiWorker(QThread):
         parts = content.get("parts") or []
         return (parts[0] or {}).get("text", "") if parts else ""
 
+    def _extract_text(self, result: dict) -> str:
+        candidates = result.get("candidates") or []
+        if not candidates:
+            return ""
+        content = (candidates[0] or {}).get("content") or {}
+        parts = content.get("parts") or []
+        return (parts[0] or {}).get("text", "") if parts else ""
+
     def run(self):
         try:
             # Формируем contents из истории

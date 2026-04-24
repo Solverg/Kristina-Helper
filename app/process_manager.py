@@ -27,6 +27,7 @@ class ProcessEntry:
     memory_mb: float
     is_blocked: bool = False
     description: str = ""
+    is_running: bool = True
 
 
 @dataclass
@@ -157,6 +158,7 @@ class ProcessManager(QObject):
     def get_processes(self) -> list[ProcessEntry]:
         """Получить список всех запущенных процессов."""
         entries = []
+        running_names: set[str] = set()
         for proc in psutil.process_iter(
             ["pid", "name", "exe", "status", "cpu_percent", "memory_info"]
         ):
@@ -164,6 +166,8 @@ class ProcessManager(QObject):
                 info = proc.info
                 mem_mb = (info["memory_info"].rss / 1024 / 1024) if info["memory_info"] else 0
                 proc_name = info["name"] or ""
+                key = proc_name.lower()
+                running_names.add(key)
                 entries.append(ProcessEntry(
                     pid=info["pid"],
                     name=proc_name,
@@ -172,14 +176,33 @@ class ProcessManager(QObject):
                     cpu_percent=round(info["cpu_percent"] or 0, 1),
                     memory_mb=round(mem_mb, 1),
                     is_blocked=self.is_blocked(proc_name),
-                    description=self.process_descriptions.get(proc_name.lower(), ""),
+                    description=self.process_descriptions.get(key, ""),
+                    is_running=True,
                 ))
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 pass
+
+        # Добавляем заблокированные, но неактивные процессы
+        for key, rule in self.block_rules.items():
+            if not rule.enabled or key in running_names:
+                continue
+            entries.append(ProcessEntry(
+                pid=0,
+                name=rule.name,
+                exe="",
+                status="Не запущен",
+                cpu_percent=0.0,
+                memory_mb=0.0,
+                is_blocked=True,
+                description=self.process_descriptions.get(key, ""),
+                is_running=False,
+            ))
         return sorted(entries, key=lambda e: e.name.lower())
 
     def kill_process(self, pid: int, name: str = "") -> bool:
         """Принудительно завершить процесс по PID."""
+        if pid <= 0:
+            return False
         try:
             proc = psutil.Process(pid)
             proc.terminate()
@@ -213,7 +236,7 @@ class ProcessManager(QObject):
 
         # Убиваем заблокированные
         for p in processes:
-            if p.is_blocked:
+            if p.is_blocked and p.is_running and p.pid > 0:
                 self.kill_process(p.pid, p.name)
 
         # Обновляем UI
@@ -221,7 +244,7 @@ class ProcessManager(QObject):
         self._emit_stats(processes)
 
     def _emit_stats(self, processes: list[ProcessEntry]):
-        blocked_running = sum(1 for p in processes if p.is_blocked)
+        blocked_running = sum(1 for p in processes if p.is_blocked and p.is_running and p.pid > 0)
         self.stats_updated.emit({
             "total_processes": len(processes),
             "blocked_rules": len(self.block_rules),
