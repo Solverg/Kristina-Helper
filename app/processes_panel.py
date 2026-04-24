@@ -339,6 +339,36 @@ class ProcessesPanel(QWidget):
         self._fetching_descriptions.discard(process_name)
         self._filter_table()
 
+    def _fetch_description(self, process_name: str):
+        api_key = self.settings.get("gemini_api_key", "").strip()
+        if not api_key or process_name in self._fetching_descriptions:
+            return
+
+        self._fetching_descriptions.add(process_name)
+        self._filter_table()
+
+        worker = ProcessDescriberWorker(api_key, process_name)
+        worker.description_ready.connect(self._on_description_ready)
+        worker.error_occurred.connect(self._on_description_error)
+        worker.finished.connect(lambda: self._on_worker_finished(worker))
+        worker.start()
+        self._active_workers.append(worker)
+
+    def _on_worker_finished(self, worker: ProcessDescriberWorker):
+        if worker in self._active_workers:
+            self._active_workers.remove(worker)
+        worker.deleteLater()
+
+    def _on_description_ready(self, process_name: str, description: str):
+        self._fetching_descriptions.discard(process_name)
+        if description:
+            self.pm.save_description(process_name, description)
+        self._manual_refresh()
+
+    def _on_description_error(self, process_name: str, _error: str):
+        self._fetching_descriptions.discard(process_name)
+        self._filter_table()
+
     def _on_selection_changed(self):
         has_selection = bool(self._table.selectedItems())
         self._btn_kill.setEnabled(has_selection)
