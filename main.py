@@ -16,6 +16,18 @@ from app.tray import TrayManager
 from app.autostart import AutostartManager
 
 
+def get_resource_path(relative_path):
+    """Возвращает абсолютный путь к ресурсу, работает и для dev, и для PyInstaller"""
+    try:
+        # PyInstaller создает временную папку и сохраняет путь в _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        # Если запуск обычный, берем путь от текущего файла
+        base_path = os.path.dirname(os.path.abspath(__file__))
+
+    return os.path.join(base_path, relative_path)
+
+
 def main():
     # Включаем HiDPI для Windows 11
     QApplication.setHighDpiScaleFactorRoundingPolicy(
@@ -24,11 +36,11 @@ def main():
 
     app = QApplication(sys.argv)
     app.setApplicationName("Kristina Helper")
-    app.setApplicationVersion("1.0.0")
+    app.setApplicationVersion("1.0.1")
     app.setQuitOnLastWindowClosed(False)  # Остаёмся в трее при закрытии окна
 
     # Иконка приложения
-    icon_path = os.path.join(os.path.dirname(__file__), "assets", "avatar.png")
+    icon_path = get_resource_path(os.path.join("assets", "avatar.png"))
     if os.path.exists(icon_path):
         app.setWindowIcon(QIcon(icon_path))
 
