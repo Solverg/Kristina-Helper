@@ -6,7 +6,7 @@ import os
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
     QLabel, QPushButton, QStackedWidget, QSizePolicy,
-    QStatusBar, QFrame
+    QStatusBar, QFrame, QApplication
 )
 from PyQt6.QtCore import Qt, QSize, QTimer
 from PyQt6.QtGui import QPixmap, QIcon, QFont
@@ -17,6 +17,7 @@ from app.process_manager import ProcessManager
 from app.processes_panel import ProcessesPanel
 from app.ai_chat import AIChatWidget
 from app.settings_panel import SettingsPanel
+from app.updater import UpdateChecker, UpdateDialog
 
 
 ASSETS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets")
@@ -177,9 +178,16 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.settings = SettingsManager()
         self.pm = ProcessManager()
+        self._update_checked = False
         self._build_ui()
         self._connect_signals()
         self._start_monitoring()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not self._update_checked:
+            self._update_checked = True
+            self.check_for_updates()
 
     def _build_ui(self):
         self.setWindowTitle("Kristina Helper")
@@ -259,6 +267,19 @@ class MainWindow(QMainWindow):
         self.pm.start_monitoring(interval)
         # Первое сканирование сразу
         QTimer.singleShot(500, self.pm.scan_and_enforce)
+
+    def check_for_updates(self):
+        current_version = QApplication.instance().applicationVersion()
+        if not current_version:
+            current_version = "1.0.0"
+
+        self.updater_thread = UpdateChecker(current_version)
+        self.updater_thread.update_available.connect(self.show_update_dialog)
+        self.updater_thread.start()
+
+    def show_update_dialog(self, version: str, download_url: str):
+        self.update_dlg = UpdateDialog(version, download_url, self)
+        self.update_dlg.exec()
 
     def _ask_ai_about_process(self, process_name: str):
         """Переключиться в чат и вставить вопрос про процесс."""

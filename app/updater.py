@@ -1,0 +1,204 @@
+"""Модуль автообновления приложения через GitHub Releases."""
+
+from __future__ import annotations
+
+import os
+import subprocess
+import sys
+
+import requests
+from PyQt6.QtCore import QThread, pyqtSignal
+from PyQt6.QtWidgets import (
+    QDialog,
+    QHBoxLayout,
+    QLabel,
+    QProgressBar,
+    QPushButton,
+    QVBoxLayout,
+)
+
+GITHUB_REPO = "Solverg/Kristina-Helper"
+ASSET_NAME = "KristinaHelper.exe"
+
+
+def is_frozen() -> bool:
+    """Проверяет, запущен ли код как скомпилированный .exe."""
+    return getattr(sys, "frozen", False)
+
+
+def parse_version(v_str: str) -> tuple[int, ...]:
+    """Превращает тег 'v1.0.1' в кортеж (1, 0, 1) для сравнения."""
+    return tuple(map(int, v_str.lstrip("v").split(".")))
+
+
+class UpdateChecker(QThread):
+    """Фоновый поток для проверки наличия новой версии."""
+
+    update_available = pyqtSignal(str, str)  # версия, download_url
+
+    def __init__(self, current_version: str):
+        super().__init__()
+        self.current_version = current_version
+
+    def run(self):
+        try:
+            url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+            response = requests.get(url, timeout=5)
+            response.raise_for_status()
+            data = response.json()
+
+            latest_version_tag = data.get("tag_name", "")
+            if not latest_version_tag:
+                return
+
+            latest_version = parse_version(latest_version_tag)
+            current = parse_version(self.current_version)
+
+            if latest_version > current:
+                download_url = None
+                for asset in data.get("assets", []):
+                    if asset.get("name") == ASSET_NAME:
+                        download_url = asset.get("browser_download_url")
+                        break
+
+                if download_url:
+                    self.update_available.emit(latest_version_tag, download_url)
+        except Exception:
+            # Игнорируем ошибки сети, чтобы не беспокоить пользователя.
+            pass
+
+
+class UpdateDownloader(QThread):
+    """Фоновый поток для скачивания файла с отчетом о прогрессе."""
+
+    progress = pyqtSignal(int)
+    finished = pyqtSignal(str)
+    error = pyqtSignal(str)
+
+    def __init__(self, download_url: str):
+        super().__init__()
+        self.download_url = download_url
+
+    def run(self):
+        try:
+            response = requests.get(self.download_url, stream=True, timeout=10)
+            response.raise_for_status()
+
+            total_size = int(response.headers.get("content-length", 0))
+            downloaded_size = 0
+
+            if not is_frozen():
+                new_exe_path = "KristinaHelper_new.exe"
+            else:
+                current_exe = sys.executable
+                new_exe_path = os.path.join(os.path.dirname(current_exe), "KristinaHelper_new.exe")
+
+            with open(new_exe_path, "wb") as file_obj:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        file_obj.write(chunk)
+                        downloaded_size += len(chunk)
+                        if total_size > 0:
+                            percent = int((downloaded_size / total_size) * 100)
+                            self.progress.emit(percent)
+
+            self.finished.emit(new_exe_path)
+        except Exception as exc:
+            self.error.emit(str(exc))
+
+
+class UpdateDialog(QDialog):
+    """Всплывающее окно с предложением обновиться."""
+
+    def __init__(self, version: str, download_url: str, parent=None):
+        super().__init__(parent)
+        self.version = version
+        self.download_url = download_url
+        self.setWindowTitle("Доступно обновление")
+        self.setFixedSize(380, 160)
+
+        self.setStyleSheet(
+            """
+            QDialog { background-color: #161b22; }
+            QLabel { color: #e6edf3; font-family: 'Segoe UI'; font-size: 13px; }
+            QPushButton {
+                background: #21262d; border: 1px solid #30363d;
+                border-radius: 6px; padding: 6px 16px; color: #e6edf3; font-weight: 500;
+            }
+            QPushButton:hover { background: #30363d; }
+            QPushButton#primary { background: #238636; border: none; font-weight: 600; }
+            QPushButton#primary:hover { background: #2ea043; }
+            QProgressBar {
+                border: 1px solid #30363d; border-radius: 4px;
+                background-color: #0d1117; text-align: center; color: white;
+            }
+            QProgressBar::chunk { background-color: #238636; border-radius: 3px; }
+            """
+        )
+
+        layout = QVBoxLayout(self)
+
+        self.lbl_info = QLabel(f"<b>Вышла новая версия {version}</b><br><br>Установить обновление сейчас?")
+        self.lbl_info.setWordWrap(True)
+        layout.addWidget(self.lbl_info)
+
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setValue(0)
+        self.progress_bar.hide()
+        layout.addWidget(self.progress_bar)
+
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+
+        self.btn_cancel = QPushButton("Позже")
+        self.btn_cancel.clicked.connect(self.reject)
+
+        self.btn_update = QPushButton("Обновить")
+        self.btn_update.setObjectName("primary")
+        self.btn_update.clicked.connect(self.start_update)
+
+        btn_layout.addWidget(self.btn_cancel)
+        btn_layout.addWidget(self.btn_update)
+        layout.addLayout(btn_layout)
+
+    def start_update(self):
+        self.btn_update.setEnabled(False)
+        self.btn_cancel.setEnabled(False)
+        self.progress_bar.show()
+        self.lbl_info.setText("Скачивание обновления...")
+
+        self.downloader = UpdateDownloader(self.download_url)
+        self.downloader.progress.connect(self.progress_bar.setValue)
+        self.downloader.finished.connect(self.apply_update)
+        self.downloader.error.connect(self.show_error)
+        self.downloader.start()
+
+    def show_error(self, _err_msg: str):
+        self.lbl_info.setText("Ошибка скачивания. Проверь интернет.")
+        self.btn_cancel.setEnabled(True)
+        self.btn_cancel.setText("Закрыть")
+
+    def apply_update(self, new_exe_path: str):
+        if not is_frozen():
+            self.lbl_info.setText("Файл скачан (режим разработки).")
+            self.btn_cancel.setEnabled(True)
+            self.btn_cancel.setText("Закрыть")
+            return
+
+        self.lbl_info.setText("Установка и перезапуск...")
+        current_exe = sys.executable
+        bat_path = os.path.join(os.path.dirname(current_exe), "update_helper.bat")
+
+        bat_content = f'''@echo off
+timeout /t 2 /nobreak > NUL
+del "{current_exe}"
+ren "{new_exe_path}" "{os.path.basename(current_exe)}"
+start "" "{current_exe}"
+del "%~f0"
+'''
+        with open(bat_path, "w", encoding="utf-8") as file_obj:
+            file_obj.write(bat_content)
+
+        create_no_window = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        subprocess.Popen([bat_path], shell=True, creationflags=create_no_window)
+        sys.exit(0)
