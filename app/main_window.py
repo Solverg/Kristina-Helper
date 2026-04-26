@@ -2,6 +2,7 @@
 Kristina Helper — главное окно приложения.
 """
 
+import sys
 import os
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
@@ -20,7 +21,19 @@ from app.settings_panel import SettingsPanel
 from app.updater import UpdateChecker, UpdateDialog
 
 
-ASSETS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets")
+def get_resource_path(relative_path):
+    """Возвращает абсолютный путь к ресурсу, работает и для dev, и для PyInstaller"""
+    try:
+        # PyInstaller создает временную папку и сохраняет путь в _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        # Если запуск обычный, берем путь от текущего файла
+        base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    return os.path.join(base_path, relative_path)
+
+
+ASSETS_DIR = get_resource_path("assets")
 
 NAV_ITEMS = [
     ("🖥", "Процессы",  0),
@@ -271,7 +284,7 @@ class MainWindow(QMainWindow):
     def check_for_updates(self):
         current_version = QApplication.instance().applicationVersion()
         if not current_version:
-            current_version = "1.0.0"
+            current_version = "1.0.1"
 
         self.updater_thread = UpdateChecker(current_version)
         self.updater_thread.update_available.connect(self.show_update_dialog)
