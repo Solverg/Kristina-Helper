@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import tempfile
 
 import requests
 from PyQt6.QtCore import QThread, pyqtSignal
@@ -29,6 +30,22 @@ def is_frozen() -> bool:
 def parse_version(v_str: str) -> tuple[int, ...]:
     """Превращает тег 'v1.0.1' в кортеж (1, 0, 1) для сравнения."""
     return tuple(map(int, v_str.lstrip("v").split(".")))
+
+
+def validate_downloaded_exe(file_path: str) -> None:
+    """Базовая проверка, что скачан корректный PE-файл, а не обрыв/HTML."""
+    if not os.path.exists(file_path):
+        raise RuntimeError("Файл обновления не найден после скачивания.")
+
+    file_size = os.path.getsize(file_path)
+    if file_size < 5 * 1024 * 1024:  # 5MB: для нашего exe это аномально мало
+        raise RuntimeError("Скачанный файл слишком маленький, обновление прервано или файл поврежден.")
+
+    with open(file_path, "rb") as file_obj:
+        magic = file_obj.read(2)
+
+    if magic != b"MZ":
+        raise RuntimeError("Скачанный файл не является Windows EXE (поврежден или получен неверный asset).")
 
 
 class UpdateChecker(QThread):
@@ -80,20 +97,24 @@ class UpdateDownloader(QThread):
         self.download_url = download_url
 
     def run(self):
+        temp_download_path = None
         try:
-            response = requests.get(self.download_url, stream=True, timeout=10)
+            response = requests.get(self.download_url, stream=True, timeout=15)
             response.raise_for_status()
 
             total_size = int(response.headers.get("content-length", 0))
             downloaded_size = 0
 
             if not is_frozen():
-                new_exe_path = "KristinaHelper_new.exe"
+                target_exe_path = "KristinaHelper_new.exe"
             else:
                 current_exe = sys.executable
-                new_exe_path = os.path.join(os.path.dirname(current_exe), "KristinaHelper_new.exe")
+                target_exe_path = os.path.join(os.path.dirname(current_exe), "KristinaHelper_new.exe")
 
-            with open(new_exe_path, "wb") as file_obj:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".part") as temp_file:
+                temp_download_path = temp_file.name
+
+            with open(temp_download_path, "wb") as file_obj:
                 for chunk in response.iter_content(chunk_size=8192):
                     if chunk:
                         file_obj.write(chunk)
@@ -102,8 +123,22 @@ class UpdateDownloader(QThread):
                             percent = int((downloaded_size / total_size) * 100)
                             self.progress.emit(percent)
 
-            self.finished.emit(new_exe_path)
+            if total_size > 0 and downloaded_size < total_size:
+                raise RuntimeError("Скачивание прервано: файл получен не полностью.")
+
+            validate_downloaded_exe(temp_download_path)
+
+            if os.path.exists(target_exe_path):
+                os.remove(target_exe_path)
+            os.replace(temp_download_path, target_exe_path)
+
+            self.finished.emit(target_exe_path)
         except Exception as exc:
+            if temp_download_path and os.path.exists(temp_download_path):
+                try:
+                    os.remove(temp_download_path)
+                except OSError:
+                    pass
             self.error.emit(str(exc))
 
 
@@ -174,7 +209,7 @@ class UpdateDialog(QDialog):
         self.downloader.start()
 
     def show_error(self, _err_msg: str):
-        self.lbl_info.setText("Ошибка скачивания. Проверь интернет.")
+        self.lbl_info.setText(f"Ошибка обновления: {_err_msg}")
         self.btn_cancel.setEnabled(True)
         self.btn_cancel.setText("Закрыть")
 
