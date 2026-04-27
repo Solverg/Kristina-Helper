@@ -1,12 +1,7 @@
-"""
-Kristina Helper — главный файл запуска.
-"""
+"""Kristina Helper — главный файл запуска."""
 
-import sys
 import os
-from PyQt6.QtWidgets import QApplication
-from PyQt6.QtGui import QIcon
-from PyQt6.QtCore import Qt
+import sys
 
 # Добавляем папку проекта в path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -29,6 +24,15 @@ def get_resource_path(relative_path):
 
 
 def main():
+    # Служебный режим для проверки обновлённого .exe перед заменой текущей версии.
+    if "--healthcheck" in sys.argv:
+        print("healthcheck:ok")
+        return
+
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtGui import QIcon
+    from PyQt6.QtWidgets import QApplication
+
     # Включаем HiDPI для Windows 11
     QApplication.setHighDpiScaleFactorRoundingPolicy(
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
