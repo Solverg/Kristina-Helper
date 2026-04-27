@@ -136,9 +136,17 @@ class Sidebar(QWidget):
             icon_label.setToolTip(f"Модуль {icon_file}")
 
             if os.path.exists(icon_path):
-                # Загружаем оригинальную картинку без масштабирования
+                # Ограничиваем размер иконки до 256x256
                 pixmap = QPixmap(icon_path)
-                icon_label.setPixmap(pixmap)
+                if not pixmap.isNull():
+                    icon_label.setPixmap(
+                        pixmap.scaled(
+                            256,
+                            256,
+                            Qt.AspectRatioMode.KeepAspectRatio,
+                            Qt.TransformationMode.SmoothTransformation,
+                        )
+                    )
             else:
                 # Заглушка, если файл не найден (размер 32x32)
                 icon_label.setFixedSize(32, 32)
