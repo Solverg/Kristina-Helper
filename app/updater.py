@@ -48,6 +48,23 @@ def validate_downloaded_exe(file_path: str) -> None:
         raise RuntimeError("Скачанный файл не является Windows EXE (поврежден или получен неверный asset).")
 
 
+def run_downloaded_exe_healthcheck(file_path: str) -> None:
+    """Проверяет, что новый .exe запускается хотя бы в служебном режиме."""
+    create_no_window = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    result = subprocess.run(
+        [file_path, "--healthcheck"],
+        capture_output=True,
+        text=True,
+        timeout=20,
+        check=False,
+        creationflags=create_no_window,
+    )
+
+    if result.returncode != 0:
+        stderr = (result.stderr or "").strip()
+        raise RuntimeError(f"Проверка обновления не пройдена (код {result.returncode}). {stderr}")
+
+
 class UpdateChecker(QThread):
     """Фоновый поток для проверки наличия новой версии."""
 
@@ -127,6 +144,7 @@ class UpdateDownloader(QThread):
                 raise RuntimeError("Скачивание прервано: файл получен не полностью.")
 
             validate_downloaded_exe(temp_download_path)
+            run_downloaded_exe_healthcheck(temp_download_path)
 
             if os.path.exists(target_exe_path):
                 os.remove(target_exe_path)
@@ -225,7 +243,7 @@ class UpdateDialog(QDialog):
         bat_path = os.path.join(os.path.dirname(current_exe), "update_helper.bat")
 
         bat_content = f'''@echo off
-timeout /t 2 /nobreak > NUL
+timeout /t 5 /nobreak > NUL
 del "{current_exe}"
 ren "{new_exe_path}" "{os.path.basename(current_exe)}"
 start "" "{current_exe}"
