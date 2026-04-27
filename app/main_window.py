@@ -73,6 +73,7 @@ class Sidebar(QWidget):
         self._avatar_path = os.path.join(ASSETS_DIR, "avatar.png")
         self._avatar_radius = 24
         self._avatar_label: QLabel | None = None
+        self._module_icon_labels: list[QLabel] = []
         self._build_ui()
 
     def _build_ui(self):
@@ -131,30 +132,17 @@ class Sidebar(QWidget):
         for icon_file in icon_files:
             icon_path = os.path.join(ASSETS_DIR, icon_file)
             icon_label = QLabel()
+            icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            icon_label.setProperty("icon_path", icon_path)
 
             icon_label.setCursor(Qt.CursorShape.PointingHandCursor)
             icon_label.setToolTip(f"Модуль {icon_file}")
-
-            if os.path.exists(icon_path):
-                # Ограничиваем размер иконки до 256x256
-                pixmap = QPixmap(icon_path)
-                if not pixmap.isNull():
-                    icon_label.setPixmap(
-                        pixmap.scaled(
-                            256,
-                            256,
-                            Qt.AspectRatioMode.KeepAspectRatio,
-                            Qt.TransformationMode.SmoothTransformation,
-                        )
-                    )
-            else:
-                # Заглушка, если файл не найден (размер 32x32)
-                icon_label.setFixedSize(32, 32)
-                icon_label.setStyleSheet("background-color: #30363d; border-radius: 6px;")
+            self._module_icon_labels.append(icon_label)
 
             modules_layout.addWidget(icon_label)
 
         layout.addLayout(modules_layout)
+        self._update_module_icons()
 
         layout.addStretch()
 
@@ -174,6 +162,35 @@ class Sidebar(QWidget):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._update_avatar()
+        self._update_module_icons()
+
+    def _update_module_icons(self):
+        if not self._module_icon_labels:
+            return
+
+        # Адаптивный размер: иконки всегда помещаются целиком в сайдбаре.
+        icon_side = max(24, min(64, (self.width() - 80) // 3))
+
+        for icon_label in self._module_icon_labels:
+            icon_label.setFixedSize(icon_side, icon_side)
+            icon_label.setStyleSheet("")
+            icon_path = icon_label.property("icon_path")
+
+            if icon_path and os.path.exists(icon_path):
+                pixmap = QPixmap(icon_path)
+                if not pixmap.isNull():
+                    icon_label.setPixmap(
+                        pixmap.scaled(
+                            icon_side,
+                            icon_side,
+                            Qt.AspectRatioMode.KeepAspectRatio,
+                            Qt.TransformationMode.SmoothTransformation,
+                        )
+                    )
+                    continue
+
+            icon_label.setPixmap(QPixmap())
+            icon_label.setStyleSheet("background-color: #30363d; border-radius: 6px;")
 
     def _update_avatar(self):
         if self._avatar_label is None:
