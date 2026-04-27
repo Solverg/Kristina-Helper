@@ -476,7 +476,7 @@ class ProcessesPanel(QWidget):
         refresh_btn.clicked.connect(lambda _checked, name=process_name: self._fetch_description(name, force=True))
 
         layout.addWidget(text_label, stretch=1)
-        layout.addWidget(refresh_btn, stretch=0, alignment=Qt.AlignmentFlag.AlignTop)
+        layout.addWidget(refresh_btn, stretch=0, alignment=Qt.AlignmentFlag.AlignVCenter)
         return cell
 
     def _fetch_description(self, process_name: str, force: bool = False):

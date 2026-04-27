@@ -36,7 +36,7 @@ def main():
 
     app = QApplication(sys.argv)
     app.setApplicationName("Kristina Helper")
-    app.setApplicationVersion("1.0.1")
+    app.setApplicationVersion("1.0.2")
     app.setQuitOnLastWindowClosed(False)  # Остаёмся в трее при закрытии окна
 
     # Иконка приложения

@@ -28,7 +28,7 @@ def is_frozen() -> bool:
 
 
 def parse_version(v_str: str) -> tuple[int, ...]:
-    """Превращает тег 'v1.0.1' в кортеж (1, 0, 1) для сравнения."""
+    """Превращает тег 'v1.0.2' в кортеж (1, 0, 2) для сравнения."""
     return tuple(map(int, v_str.lstrip("v").split(".")))
 
 
