@@ -116,6 +116,46 @@ class Sidebar(QWidget):
             self._nav_buttons.append(btn)
             layout.addWidget(btn)
 
+        # ── Дополнительные модули (иконки) ────────────────────────────────────
+        modules_sep = QFrame()
+        modules_sep.setFrameShape(QFrame.Shape.HLine)
+        modules_sep.setStyleSheet("background-color: #21262d; max-height: 1px; margin: 12px 0 8px 0;")
+        layout.addWidget(modules_sep)
+
+        modules_layout = QHBoxLayout()
+        modules_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        modules_layout.setSpacing(16)
+
+        icon_files = ["icon1.png", "icon2.png", "icon3.png"]
+
+        for icon_file in icon_files:
+            icon_path = os.path.join(ASSETS_DIR, icon_file)
+            icon_label = QLabel()
+
+            icon_label.setCursor(Qt.CursorShape.PointingHandCursor)
+            icon_label.setToolTip(f"Модуль {icon_file}")
+
+            if os.path.exists(icon_path):
+                # Ограничиваем размер иконки до 256x256
+                pixmap = QPixmap(icon_path)
+                if not pixmap.isNull():
+                    icon_label.setPixmap(
+                        pixmap.scaled(
+                            256,
+                            256,
+                            Qt.AspectRatioMode.KeepAspectRatio,
+                            Qt.TransformationMode.SmoothTransformation,
+                        )
+                    )
+            else:
+                # Заглушка, если файл не найден (размер 32x32)
+                icon_label.setFixedSize(32, 32)
+                icon_label.setStyleSheet("background-color: #30363d; border-radius: 6px;")
+
+            modules_layout.addWidget(icon_label)
+
+        layout.addLayout(modules_layout)
+
         layout.addStretch()
 
         # ── Статус мониторинга ────────────────────────────────────────────────
@@ -284,7 +324,7 @@ class MainWindow(QMainWindow):
     def check_for_updates(self):
         current_version = QApplication.instance().applicationVersion()
         if not current_version:
-            current_version = "1.0.2"
+            current_version = "1.0.3"
 
         self.updater_thread = UpdateChecker(current_version)
         self.updater_thread.update_available.connect(self.show_update_dialog)
