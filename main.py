@@ -2,6 +2,7 @@
 
 import os
 import sys
+import ctypes
 
 # Добавляем папку проекта в path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -24,11 +25,27 @@ def get_resource_path(relative_path):
 
 
 def main():
-    # Служебный режим для проверки обновлённого .exe перед заменой текущей версии.
+    # 1. Служебный режим для апдейтера.
+    # Выполняем ДО проверки на дубликаты, чтобы апдейтер мог запустить healthcheck
+    # даже если основная программа еще висит в памяти.
     if "--healthcheck" in sys.argv:
         print("healthcheck:ok")
         return
 
+    # 2. Проверка на единственную копию (только для Windows)
+    if sys.platform == "win32":
+        mutex_name = "KristinaHelper_SingleInstance_Mutex"
+
+        # Держим ссылку до конца main, чтобы mutex не освободился сборщиком мусора.
+        mutex = ctypes.windll.kernel32.CreateMutexW(None, False, mutex_name)
+
+        if not mutex:
+            print("Не удалось создать системный mutex, продолжаем запуск без блокировки дублей.")
+        elif ctypes.windll.kernel32.GetLastError() == 183:  # ERROR_ALREADY_EXISTS
+            print("Kristina Helper уже запущена.")
+            sys.exit(0)
+
+    # 3. Стандартный запуск PyQt
     from PyQt6.QtCore import Qt
     from PyQt6.QtGui import QIcon
     from PyQt6.QtWidgets import QApplication
@@ -40,7 +57,7 @@ def main():
 
     app = QApplication(sys.argv)
     app.setApplicationName("Kristina Helper")
-    app.setApplicationVersion("1.0.2")
+    app.setApplicationVersion("1.0.3")
     app.setQuitOnLastWindowClosed(False)  # Остаёмся в трее при закрытии окна
 
     # Иконка приложения
