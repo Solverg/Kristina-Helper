@@ -139,6 +139,7 @@ class ProcessesPanel(QWidget):
     """
 
     ask_ai_about = pyqtSignal(str)   # Запросить AI про этот процесс
+    scan_interval_changed = pyqtSignal(int)  # сек
 
     def __init__(self, process_manager: ProcessManager, settings_manager, parent=None):
         super().__init__(parent)
@@ -186,10 +187,10 @@ class ProcessesPanel(QWidget):
         self._interval_slider = QSlider(Qt.Orientation.Horizontal)
         self._interval_slider.setMinimum(1)   # 1 секунда
         self._interval_slider.setMaximum(60)  # 60 секунд
-        self._interval_slider.setValue(5)
+        self._interval_slider.setValue(self.settings.get("scan_interval_sec", 5))
         self._interval_slider.setFixedWidth(200)
 
-        self._interval_value_label = QLabel("5 сек")
+        self._interval_value_label = QLabel(f"{self._interval_slider.value()} сек")
         self._interval_value_label.setStyleSheet("color: #58a6ff; font-weight: 600; min-width: 50px;")
 
         self._interval_slider.valueChanged.connect(self._on_interval_changed)
@@ -423,10 +424,11 @@ class ProcessesPanel(QWidget):
     def _build_ask_button_cell(self, process_name: str) -> QWidget:
         cell = QWidget()
         layout = QHBoxLayout(cell)
-        layout.setContentsMargins(4, 3, 4, 3)
+        layout.setContentsMargins(3, 4, 3, 4)
         layout.setSpacing(0)
 
         btn = QPushButton("✨ Узнать")
+        btn.setMinimumHeight(20)
         btn.setObjectName("desc_btn")
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
         btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
@@ -434,12 +436,14 @@ class ProcessesPanel(QWidget):
             QPushButton#desc_btn {
                 background-color: #238636; color: #ffffff;
                 border: none; border-radius: 8px; padding: 5px 10px;
-                font-size: 12px; font-weight: 600; min-height: 24px; min-width: 104px;
+                text-align: center;
+                font-size: 12px; font-weight: 600; min-height: 20px; min-width: 86px;
             }
             QPushButton#desc_btn:hover { background-color: #2ea043; }
         """)
         btn.clicked.connect(lambda _checked, name=process_name: self._fetch_description(name))
         layout.addWidget(btn, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        cell.setMinimumHeight(25)
         return cell
 
     def _build_description_cell(self, text: str, process_name: str) -> QWidget:
@@ -606,6 +610,15 @@ class ProcessesPanel(QWidget):
         menu.exec(self._table.viewport().mapToGlobal(pos))
 
     def _on_interval_changed(self, value: int):
+        self._interval_value_label.setText(f"{value} сек")
+        self.settings.set("scan_interval_sec", value)
+        self.pm.set_interval(value * 1000)
+        self.scan_interval_changed.emit(value)
+
+    def set_scan_interval(self, value: int):
+        self._interval_slider.blockSignals(True)
+        self._interval_slider.setValue(value)
+        self._interval_slider.blockSignals(False)
         self._interval_value_label.setText(f"{value} сек")
         self.pm.set_interval(value * 1000)
 

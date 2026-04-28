@@ -94,7 +94,7 @@ class StartupPanel(QWidget):
         self._table.setRowCount(len(self._apps))
 
         for row, item in enumerate(self._apps):
-            self._table.setRowHeight(row, 44)
+            self._table.setRowHeight(row, 37)
             self._table.setItem(row, 0, QTableWidgetItem(item.name))
             self._table.setItem(row, 1, QTableWidgetItem(item.source))
 
@@ -116,8 +116,9 @@ class StartupPanel(QWidget):
                     "  color: #e6edf3;"
                     "  border: 1px solid #30363d;"
                     "  border-radius: 6px;"
-                    "  padding: 5px 14px;"
-                    "  font-size: 12px;"
+                    "  padding: 4px 12px;"
+                    "  font-size: 11px;"
+                    "  text-align: center;"
                     "}"
                     "QPushButton:hover { background-color: #30363d; border-color: #8b949e; }"
                     "QPushButton:disabled { color: #484f58; border-color: #21262d; }"
@@ -130,15 +131,18 @@ class StartupPanel(QWidget):
                     "  color: #ffffff;"
                     "  border: none;"
                     "  border-radius: 6px;"
-                    "  padding: 5px 14px;"
-                    "  font-size: 12px;"
+                    "  padding: 4px 12px;"
+                    "  font-size: 11px;"
                     "  font-weight: 600;"
+                    "  text-align: center;"
                     "}"
                     "QPushButton:hover { background-color: #2ea043; }"
                     "QPushButton:disabled { background-color: #1a3a20; color: #484f58; }"
                 )
 
             action_btn = QPushButton(btn_text)
+            action_btn.setMinimumHeight(23)
+            action_btn.setMinimumWidth(101)
             action_btn.setStyleSheet(btn_style)
             action_btn.setCursor(Qt.CursorShape.PointingHandCursor)
             action_btn.clicked.connect(lambda _, startup_item=item: self._on_toggle(startup_item))
@@ -152,8 +156,10 @@ class StartupPanel(QWidget):
             cell_widget = QWidget()
             cell_widget.setStyleSheet("background: transparent;")
             cell_layout = QHBoxLayout(cell_widget)
-            cell_layout.setContentsMargins(6, 4, 6, 4)
-            cell_layout.addWidget(action_btn)
+            cell_layout.setContentsMargins(5, 3, 5, 3)
+            cell_layout.addStretch()
+            cell_layout.addWidget(action_btn, 0, Qt.AlignmentFlag.AlignCenter)
+            cell_layout.addStretch()
             self._table.setCellWidget(row, 4, cell_widget)
 
     def _on_toggle(self, item: StartupItem):
