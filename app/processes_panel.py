@@ -424,7 +424,7 @@ class ProcessesPanel(QWidget):
     def _build_ask_button_cell(self, process_name: str) -> QWidget:
         cell = QWidget()
         layout = QHBoxLayout(cell)
-        layout.setContentsMargins(3, 2, 3, 2)
+        layout.setContentsMargins(3, 4, 3, 4)
         layout.setSpacing(0)
 
         btn = QPushButton("✨ Узнать")
@@ -443,6 +443,7 @@ class ProcessesPanel(QWidget):
         """)
         btn.clicked.connect(lambda _checked, name=process_name: self._fetch_description(name))
         layout.addWidget(btn, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        cell.setMinimumHeight(25)
         return cell
 
     def _build_description_cell(self, text: str, process_name: str) -> QWidget:

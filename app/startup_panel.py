@@ -117,7 +117,7 @@ class StartupPanel(QWidget):
                     "  border: 1px solid #30363d;"
                     "  border-radius: 6px;"
                     "  padding: 4px 12px;"
-                    "  font-size: 12px;"
+                    "  font-size: 11px;"
                     "  text-align: center;"
                     "}"
                     "QPushButton:hover { background-color: #30363d; border-color: #8b949e; }"
@@ -132,7 +132,7 @@ class StartupPanel(QWidget):
                     "  border: none;"
                     "  border-radius: 6px;"
                     "  padding: 4px 12px;"
-                    "  font-size: 12px;"
+                    "  font-size: 11px;"
                     "  font-weight: 600;"
                     "  text-align: center;"
                     "}"
@@ -157,8 +157,9 @@ class StartupPanel(QWidget):
             cell_widget.setStyleSheet("background: transparent;")
             cell_layout = QHBoxLayout(cell_widget)
             cell_layout.setContentsMargins(5, 3, 5, 3)
-            cell_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            cell_layout.addWidget(action_btn)
+            cell_layout.addStretch()
+            cell_layout.addWidget(action_btn, 0, Qt.AlignmentFlag.AlignCenter)
+            cell_layout.addStretch()
             self._table.setCellWidget(row, 4, cell_widget)
 
     def _on_toggle(self, item: StartupItem):
