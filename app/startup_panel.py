@@ -141,8 +141,8 @@ class StartupPanel(QWidget):
                 )
 
             action_btn = QPushButton(btn_text)
-            action_btn.setMinimumHeight(23)
-            action_btn.setMinimumWidth(101)
+            action_btn.setMinimumHeight(24)
+            action_btn.setMinimumWidth(130)
             action_btn.setStyleSheet(btn_style)
             action_btn.setCursor(Qt.CursorShape.PointingHandCursor)
             action_btn.clicked.connect(lambda _, startup_item=item: self._on_toggle(startup_item))
@@ -156,10 +156,9 @@ class StartupPanel(QWidget):
             cell_widget = QWidget()
             cell_widget.setStyleSheet("background: transparent;")
             cell_layout = QHBoxLayout(cell_widget)
-            cell_layout.setContentsMargins(5, 3, 5, 3)
-            cell_layout.addStretch()
-            cell_layout.addWidget(action_btn, 0, Qt.AlignmentFlag.AlignCenter)
-            cell_layout.addStretch()
+            cell_layout.setContentsMargins(0, 0, 0, 0)
+            cell_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            cell_layout.addWidget(action_btn)
             self._table.setCellWidget(row, 4, cell_widget)
 
     def _on_toggle(self, item: StartupItem):
