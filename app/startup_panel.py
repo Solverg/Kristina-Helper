@@ -65,11 +65,17 @@ class StartupPanel(QWidget):
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
         self._table.verticalHeader().setVisible(False)
+        # Сбрасываем глобальный padding: 8px 12px — он съедает высоту cellWidget
+        self._table.setStyleSheet("""
+            QTableWidget::item { padding: 0px 8px; border-bottom: 1px solid #21262d; }
+        """)
         self._table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         self._table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         self._table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         self._table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
-        self._table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
+        self._table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
+        # sizeHint «⏸ Приостановить» = 124px + отступы cell (8px) = 132px → берём 140px
+        self._table.setColumnWidth(4, 140)
         layout.addWidget(self._table)
 
     def _load_apps(self):
@@ -94,7 +100,7 @@ class StartupPanel(QWidget):
         self._table.setRowCount(len(self._apps))
 
         for row, item in enumerate(self._apps):
-            self._table.setRowHeight(row, 37)
+            self._table.setRowHeight(row, 36)
             self._table.setItem(row, 0, QTableWidgetItem(item.name))
             self._table.setItem(row, 1, QTableWidgetItem(item.source))
 
@@ -141,8 +147,7 @@ class StartupPanel(QWidget):
                 )
 
             action_btn = QPushButton(btn_text)
-            action_btn.setMinimumHeight(24)
-            action_btn.setMinimumWidth(130)
+            action_btn.setMinimumHeight(30)
             action_btn.setStyleSheet(btn_style)
             action_btn.setCursor(Qt.CursorShape.PointingHandCursor)
             action_btn.clicked.connect(lambda _, startup_item=item: self._on_toggle(startup_item))
@@ -156,7 +161,7 @@ class StartupPanel(QWidget):
             cell_widget = QWidget()
             cell_widget.setStyleSheet("background: transparent;")
             cell_layout = QHBoxLayout(cell_widget)
-            cell_layout.setContentsMargins(0, 0, 0, 0)
+            cell_layout.setContentsMargins(4, 0, 4, 0)
             cell_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
             cell_layout.addWidget(action_btn)
             self._table.setCellWidget(row, 4, cell_widget)

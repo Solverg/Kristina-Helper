@@ -283,7 +283,7 @@ class ProcessesPanel(QWidget):
             QTreeWidget::item {
                 border-bottom: 1px solid rgba(139, 148, 158, 0.14);
                 border-right: 1px solid rgba(139, 148, 158, 0.10);
-                padding: 3px 6px;
+                padding: 0px 6px;
             }
             QHeaderView::section {
                 border-right: 1px solid rgba(139, 148, 158, 0.16);
@@ -422,28 +422,32 @@ class ProcessesPanel(QWidget):
             self._table.setItemWidget(item, 6, self._build_ask_button_cell(p.name))
 
     def _build_ask_button_cell(self, process_name: str) -> QWidget:
+        from PyQt6.QtCore import Qt as _Qt
         cell = QWidget()
+        cell.setAttribute(_Qt.WidgetAttribute.WA_TranslucentBackground)
+        cell.setStyleSheet("background: transparent;")
+        # Минимальная высота = sizeHint кнопки (34px) + вертикальные отступы (6px)
+        cell.setMinimumHeight(36)
         layout = QHBoxLayout(cell)
-        layout.setContentsMargins(3, 4, 3, 4)
+        layout.setContentsMargins(6, 0, 6, 0)
         layout.setSpacing(0)
+        layout.setAlignment(_Qt.AlignmentFlag.AlignCenter)
 
         btn = QPushButton("✨ Узнать")
-        btn.setMinimumHeight(20)
         btn.setObjectName("desc_btn")
-        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn.setCursor(_Qt.CursorShape.PointingHandCursor)
         btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         btn.setStyleSheet("""
             QPushButton#desc_btn {
                 background-color: #238636; color: #ffffff;
-                border: none; border-radius: 8px; padding: 3px 6px;
+                border: none; border-radius: 8px; padding: 4px 12px;
                 text-align: center;
-                font-size: 12px; font-weight: 600; min-height: 20px;
+                font-size: 12px; font-weight: 600; min-height: 24px;
             }
             QPushButton#desc_btn:hover { background-color: #2ea043; }
         """)
         btn.clicked.connect(lambda _checked, name=process_name: self._fetch_description(name))
-        layout.addWidget(btn, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        cell.setMinimumHeight(32)
+        layout.addWidget(btn)
         return cell
 
     def _build_description_cell(self, text: str, process_name: str) -> QWidget:
