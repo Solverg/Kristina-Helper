@@ -94,7 +94,7 @@ class StartupPanel(QWidget):
         self._table.setRowCount(len(self._apps))
 
         for row, item in enumerate(self._apps):
-            self._table.setRowHeight(row, 52)
+            self._table.setRowHeight(row, 56)
             self._table.setItem(row, 0, QTableWidgetItem(item.name))
             self._table.setItem(row, 1, QTableWidgetItem(item.source))
 
@@ -139,7 +139,8 @@ class StartupPanel(QWidget):
                 )
 
             action_btn = QPushButton(btn_text)
-            action_btn.setMinimumHeight(34)
+            action_btn.setMinimumHeight(36)
+            action_btn.setMinimumWidth(148)
             action_btn.setStyleSheet(btn_style)
             action_btn.setCursor(Qt.CursorShape.PointingHandCursor)
             action_btn.clicked.connect(lambda _, startup_item=item: self._on_toggle(startup_item))

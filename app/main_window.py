@@ -319,6 +319,10 @@ class MainWindow(QMainWindow):
         # Переход в чат при нажатии "Спросить AI"
         self._processes_panel.ask_ai_about.connect(self._ask_ai_about_process)
 
+        # Синхронизация интервала сканирования между Процессами и Настройками
+        self._processes_panel.scan_interval_changed.connect(self._settings_panel.set_scan_interval)
+        self._settings_panel.scan_interval_changed.connect(self._processes_panel.set_scan_interval)
+
         # Обновление статуса
         self.pm.stats_updated.connect(self._on_stats_updated)
         self.pm.process_killed.connect(self._on_process_killed)
@@ -345,7 +349,7 @@ class MainWindow(QMainWindow):
     def check_for_updates(self):
         current_version = QApplication.instance().applicationVersion()
         if not current_version:
-            current_version = "1.0.3"
+            current_version = "1.1.0"
 
         self.updater_thread = UpdateChecker(current_version)
         self.updater_thread.update_available.connect(self.show_update_dialog)

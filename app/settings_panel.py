@@ -103,6 +103,7 @@ class SettingsPanel(QWidget):
     """Панель настроек приложения."""
 
     autostart_changed = pyqtSignal(bool)
+    scan_interval_changed = pyqtSignal(int)
 
     def __init__(self, settings: SettingsManager, parent=None):
         super().__init__(parent)
@@ -172,9 +173,7 @@ class SettingsPanel(QWidget):
                 width: 18px;
             }
         """)
-        self._interval_spin.valueChanged.connect(
-            lambda v: self.settings.set("scan_interval_sec", v)
-        )
+        self._interval_spin.valueChanged.connect(self._on_scan_interval_changed)
         monitor_card.add_row(SettingRow(
             "Интервал проверки",
             "Как часто сканировать запущенные процессы",
@@ -241,7 +240,7 @@ class SettingsPanel(QWidget):
 
         lines = [
             ("Kristina Helper", "#e6edf3", "14px", "700"),
-            ("Версия 1.0.3", "#8b949e", "12px", "400"),
+            ("Версия 1.1.0", "#8b949e", "12px", "400"),
             ("Мониторинг и блокировка процессов Windows + AI-чат", "#8b949e", "12px", "400"),
         ]
         for text, color, size, weight in lines:
@@ -300,3 +299,13 @@ class SettingsPanel(QWidget):
                 return
         self.settings.set("autostart", checked)
         self.autostart_changed.emit(checked)
+
+
+    def _on_scan_interval_changed(self, value: int):
+        self.settings.set("scan_interval_sec", value)
+        self.scan_interval_changed.emit(value)
+
+    def set_scan_interval(self, value: int):
+        self._interval_spin.blockSignals(True)
+        self._interval_spin.setValue(value)
+        self._interval_spin.blockSignals(False)
