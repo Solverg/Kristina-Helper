@@ -435,15 +435,15 @@ class ProcessesPanel(QWidget):
         btn.setStyleSheet("""
             QPushButton#desc_btn {
                 background-color: #238636; color: #ffffff;
-                border: none; border-radius: 8px; padding: 5px 10px;
+                border: none; border-radius: 8px; padding: 3px 6px;
                 text-align: center;
-                font-size: 12px; font-weight: 600; min-height: 20px; min-width: 86px;
+                font-size: 12px; font-weight: 600; min-height: 20px;
             }
             QPushButton#desc_btn:hover { background-color: #2ea043; }
         """)
         btn.clicked.connect(lambda _checked, name=process_name: self._fetch_description(name))
         layout.addWidget(btn, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        cell.setMinimumHeight(25)
+        cell.setMinimumHeight(32)
         return cell
 
     def _build_description_cell(self, text: str, process_name: str) -> QWidget:
