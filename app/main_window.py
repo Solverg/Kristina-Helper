@@ -18,6 +18,7 @@ from app.process_manager import ProcessManager
 from app.processes_panel import ProcessesPanel
 from app.ai_chat import AIChatWidget
 from app.settings_panel import SettingsPanel
+from app.startup_panel import StartupPanel
 from app.updater import UpdateChecker, UpdateDialog
 
 
@@ -39,6 +40,7 @@ NAV_ITEMS = [
     ("🖥", "Процессы",  0),
     ("✨", "AI-чат",    1),
     ("⚙️", "Настройки", 2),
+    ("🚀", "Автозагрузка", 3),
 ]
 
 
@@ -293,10 +295,12 @@ class MainWindow(QMainWindow):
         self._processes_panel = ProcessesPanel(self.pm, self.settings)
         self._chat_panel = AIChatWidget(self.settings)
         self._settings_panel = SettingsPanel(self.settings)
+        self._startup_panel = StartupPanel()
 
         self._stack.addWidget(self._processes_panel)  # index 0
         self._stack.addWidget(self._chat_panel)        # index 1
         self._stack.addWidget(self._settings_panel)   # index 2
+        self._stack.addWidget(self._startup_panel)    # index 3
 
         # ── Статусная строка ──────────────────────────────────────────────────
         self._status_bar = QStatusBar()
