@@ -240,12 +240,22 @@ class UpdateDialog(QDialog):
 
         self.lbl_info.setText("Установка и перезапуск...")
         current_exe = sys.executable
-        bat_path = os.path.join(os.path.dirname(current_exe), "update_helper.bat")
+        exe_name = os.path.basename(current_exe)
+        exe_dir = os.path.dirname(current_exe)
+        bat_path = os.path.join(exe_dir, "update_helper.bat")
 
+        # Добавляем taskkill для уверенности и используем полные пути в кавычках
         bat_content = f'''@echo off
-timeout /t 5 /nobreak > NUL
-del "{current_exe}"
-ren "{new_exe_path}" "{os.path.basename(current_exe)}"
+chcp 65001 > NUL
+timeout /t 3 /nobreak > NUL
+taskkill /F /IM "{exe_name}" /T > NUL 2>&1
+:loop
+del "{current_exe}" > NUL 2>&1
+if exist "{current_exe}" (
+    timeout /t 1 /nobreak > NUL
+    goto loop
+)
+ren "{new_exe_path}" "{exe_name}"
 start "" "{current_exe}"
 del "%~f0"
 '''
@@ -253,5 +263,8 @@ del "%~f0"
             file_obj.write(bat_content)
 
         create_no_window = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-        subprocess.Popen([bat_path], shell=True, creationflags=create_no_window)
-        sys.exit(0)
+        # На Windows для bat-файлов лучше передавать строку, а не список
+        subprocess.Popen(f'"{bat_path}"', shell=True, creationflags=create_no_window)
+
+        # Мгновенно завершаем процесс на уровне ОС, чтобы освободить мьютекс
+        os._exit(0)
