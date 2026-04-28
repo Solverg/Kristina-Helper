@@ -37,10 +37,10 @@ def get_resource_path(relative_path):
 ASSETS_DIR = get_resource_path("assets")
 
 NAV_ITEMS = [
-    ("🖥", "Процессы",  0),
-    ("✨", "AI-чат",    1),
-    ("⚙️", "Настройки", 2),
-    ("🚀", "Автозагрузка", 3),
+    ("🖥", "Процессы",     0),
+    ("🚀", "Автозагрузка", 1),
+    ("✨", "AI-чат",       2),
+    ("⚙️", "Настройки",   3),
 ]
 
 
@@ -297,10 +297,10 @@ class MainWindow(QMainWindow):
         self._settings_panel = SettingsPanel(self.settings)
         self._startup_panel = StartupPanel()
 
-        self._stack.addWidget(self._processes_panel)  # index 0
-        self._stack.addWidget(self._chat_panel)        # index 1
-        self._stack.addWidget(self._settings_panel)   # index 2
-        self._stack.addWidget(self._startup_panel)    # index 3
+        self._stack.addWidget(self._processes_panel)  # index 0 — Процессы
+        self._stack.addWidget(self._startup_panel)    # index 1 — Автозагрузка
+        self._stack.addWidget(self._chat_panel)        # index 2 — AI-чат
+        self._stack.addWidget(self._settings_panel)   # index 3 — Настройки
 
         # ── Статусная строка ──────────────────────────────────────────────────
         self._status_bar = QStatusBar()
@@ -357,7 +357,7 @@ class MainWindow(QMainWindow):
 
     def _ask_ai_about_process(self, process_name: str):
         """Переключиться в чат и вставить вопрос про процесс."""
-        self._select_page(1)
+        self._select_page(2)  # AI-чат теперь index 2
         self._chat_panel.inject_process_context(process_name)
 
     def _on_stats_updated(self, stats: dict):

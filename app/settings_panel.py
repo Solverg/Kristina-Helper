@@ -286,9 +286,17 @@ class SettingsPanel(QWidget):
             else:
                 ok = AutostartManager.disable()
             if not ok:
-                # Откатываем тоггл если не удалось
+                # Откатываем тоггл и показываем ошибку
                 self._autostart_toggle.blockSignals(True)
                 self._autostart_toggle.setChecked(not checked)
                 self._autostart_toggle.blockSignals(False)
+                from PyQt6.QtWidgets import QMessageBox
+                QMessageBox.warning(
+                    self,
+                    "Автозапуск",
+                    "Не удалось изменить параметр автозапуска.\n"
+                    "Проверьте права доступа или запустите приложение от имени администратора."
+                )
+                return
         self.settings.set("autostart", checked)
         self.autostart_changed.emit(checked)

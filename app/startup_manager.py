@@ -110,7 +110,7 @@ class StartupAppsManager:
                 while True:
                     try:
                         name, path, _ = winreg.EnumValue(key, i)
-                        if isinstance(path, str):
+                        if name not in cls._SELF_APP_NAMES and isinstance(path, str):
                             items.append(StartupItem(name=name, target_path=path, source=source_name, status="paused", raw_key=name))
                         i += 1
                     except OSError:
@@ -167,11 +167,29 @@ class StartupAppsManager:
 
             hive = winreg.HKEY_LOCAL_MACHINE if item.source == "HKLM" else winreg.HKEY_CURRENT_USER
             cls._ensure_registry_backup_key(hive)
-            with winreg.OpenKey(hive, cls.RUN_KEY, 0, winreg.KEY_READ | winreg.KEY_SET_VALUE) as run_key:
+
+            # Читаем путь из Run
+            with winreg.OpenKey(hive, cls.RUN_KEY, 0, winreg.KEY_READ) as run_key:
                 path, _ = winreg.QueryValueEx(run_key, item.raw_key)
-                with winreg.OpenKey(hive, cls.BACKUP_KEY_BASE, 0, winreg.KEY_SET_VALUE) as backup_key:
-                    winreg.SetValueEx(backup_key, item.raw_key, 0, winreg.REG_SZ, path)
-                winreg.DeleteValue(run_key, item.raw_key)
+
+            # Сначала пишем в backup — если упадёт, Run не тронем
+            with winreg.OpenKey(hive, cls.BACKUP_KEY_BASE, 0, winreg.KEY_SET_VALUE) as backup_key:
+                winreg.SetValueEx(backup_key, item.raw_key, 0, winreg.REG_SZ, path)
+
+            # Только после успешной записи в backup удаляем из Run
+            try:
+                with winreg.OpenKey(hive, cls.RUN_KEY, 0, winreg.KEY_SET_VALUE) as run_key:
+                    winreg.DeleteValue(run_key, item.raw_key)
+            except Exception as del_err:
+                # Удаление не удалось — откатываем backup чтобы не было дублей
+                logger.error(f"Не удалось удалить из Run, откат backup: {del_err}")
+                try:
+                    with winreg.OpenKey(hive, cls.BACKUP_KEY_BASE, 0, winreg.KEY_SET_VALUE) as backup_key:
+                        winreg.DeleteValue(backup_key, item.raw_key)
+                except Exception:
+                    pass
+                return False
+
             return True
         except Exception as e:
             logger.error(f"Ошибка приостановки {item.name}: {e}")

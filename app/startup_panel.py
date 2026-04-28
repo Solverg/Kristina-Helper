@@ -77,8 +77,11 @@ class StartupPanel(QWidget):
         self._is_admin = StartupAppsManager.is_admin()
         self._warning_label.setVisible(not self._is_admin)
 
+        # Явно убираем виджеты из ячеек перед пересозданием строк
+        self._table.clearContents()
+        self._table.clearSpans()
+
         if not self._apps:
-            self._table.clearSpans()
             self._table.setRowCount(1)
             self._table.setColumnCount(5)
             self._table.setHorizontalHeaderLabels(["Приложение", "Источник", "Статус", "Путь/ключ", "Действие"])
@@ -88,10 +91,10 @@ class StartupPanel(QWidget):
             self._table.setSpan(0, 0, 1, 5)
             return
 
-        self._table.clearSpans()
         self._table.setRowCount(len(self._apps))
 
         for row, item in enumerate(self._apps):
+            self._table.setRowHeight(row, 44)
             self._table.setItem(row, 0, QTableWidgetItem(item.name))
             self._table.setItem(row, 1, QTableWidgetItem(item.source))
 
@@ -102,21 +105,76 @@ class StartupPanel(QWidget):
 
             self._table.setItem(row, 3, QTableWidgetItem(item.target_path))
 
-            action_btn = QPushButton("Приостановить" if item.status == "active" else "Возобновить")
-            action_btn.setObjectName("refresh_btn" if item.status == "active" else "action_btn")
+            needs_admin = item.source in {"HKLM", "FOLDER_SYSTEM"} and not self._is_admin
+            is_active = item.status == "active"
+
+            if is_active:
+                btn_text = "⏸ Приостановить"
+                btn_style = (
+                    "QPushButton {"
+                    "  background-color: #21262d;"
+                    "  color: #e6edf3;"
+                    "  border: 1px solid #30363d;"
+                    "  border-radius: 6px;"
+                    "  padding: 5px 14px;"
+                    "  font-size: 12px;"
+                    "}"
+                    "QPushButton:hover { background-color: #30363d; border-color: #8b949e; }"
+                    "QPushButton:disabled { color: #484f58; border-color: #21262d; }"
+                )
+            else:
+                btn_text = "▶ Возобновить"
+                btn_style = (
+                    "QPushButton {"
+                    "  background-color: #238636;"
+                    "  color: #ffffff;"
+                    "  border: none;"
+                    "  border-radius: 6px;"
+                    "  padding: 5px 14px;"
+                    "  font-size: 12px;"
+                    "  font-weight: 600;"
+                    "}"
+                    "QPushButton:hover { background-color: #2ea043; }"
+                    "QPushButton:disabled { background-color: #1a3a20; color: #484f58; }"
+                )
+
+            action_btn = QPushButton(btn_text)
+            action_btn.setStyleSheet(btn_style)
+            action_btn.setCursor(Qt.CursorShape.PointingHandCursor)
             action_btn.clicked.connect(lambda _, startup_item=item: self._on_toggle(startup_item))
 
-            needs_admin = item.source in {"HKLM", "FOLDER_SYSTEM"} and not self._is_admin
             if needs_admin:
                 action_btn.setEnabled(False)
                 action_btn.setToolTip("Требуются права Администратора")
 
-            self._table.setCellWidget(row, 4, action_btn)
+            # Враппер с отступами: без него кнопка растягивается на всю ячейку
+            # и может не получить корректный фон через наследование QTableWidget
+            cell_widget = QWidget()
+            cell_widget.setStyleSheet("background: transparent;")
+            cell_layout = QHBoxLayout(cell_widget)
+            cell_layout.setContentsMargins(6, 4, 6, 4)
+            cell_layout.addWidget(action_btn)
+            self._table.setCellWidget(row, 4, cell_widget)
 
     def _on_toggle(self, item: StartupItem):
+        needs_admin = item.source in {"HKLM", "FOLDER_SYSTEM"} and not self._is_admin
+        if needs_admin:
+            QMessageBox.warning(
+                self,
+                "Автозагрузка",
+                f"Для изменения «{item.name}» требуются права Администратора.\n"
+                "Перезапустите Kristina Helper от имени администратора."
+            )
+            return
+
         success = StartupAppsManager.toggle_app(item)
         if not success:
-            QMessageBox.warning(self, "Автозагрузка", "Не удалось изменить статус автозагрузки.")
+            QMessageBox.warning(
+                self,
+                "Автозагрузка",
+                f"Не удалось изменить статус автозагрузки для «{item.name}».\n"
+                "Подробности смотрите в журнале приложения."
+            )
             return
 
         self._load_apps()

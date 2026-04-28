@@ -75,11 +75,11 @@ class AutostartManager:
             return False
 
     @staticmethod
-    def toggle() -> bool:
-        """Переключить состояние. Возвращает новое состояние."""
+    def toggle() -> bool | None:
+        """Переключить состояние. Возвращает новое состояние или None при ошибке."""
         if AutostartManager.is_enabled():
-            AutostartManager.disable()
-            return False
+            ok = AutostartManager.disable()
+            return False if ok else None
         else:
-            AutostartManager.enable()
-            return True
+            ok = AutostartManager.enable()
+            return True if ok else None
