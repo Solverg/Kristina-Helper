@@ -428,7 +428,7 @@ class ProcessesPanel(QWidget):
         layout.setSpacing(0)
 
         btn = QPushButton("✨ Узнать")
-        btn.setMinimumHeight(30)
+        btn.setMinimumHeight(26)
         btn.setObjectName("desc_btn")
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
         btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
@@ -436,7 +436,7 @@ class ProcessesPanel(QWidget):
             QPushButton#desc_btn {
                 background-color: #238636; color: #ffffff;
                 border: none; border-radius: 8px; padding: 5px 10px;
-                font-size: 12px; font-weight: 600; min-height: 30px; min-width: 124px;
+                font-size: 11px; font-weight: 600; min-height: 26px; min-width: 108px;
             }
             QPushButton#desc_btn:hover { background-color: #2ea043; }
         """)
