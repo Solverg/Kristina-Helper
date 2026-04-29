@@ -154,7 +154,11 @@ class SettingsPanel(QWidget):
         self._interval_spin = QSpinBox()
         self._interval_spin.setMinimum(1)
         self._interval_spin.setMaximum(60)
-        self._interval_spin.setValue(self.settings.get("scan_interval_sec", 5))
+        # Блокируем сигналы перед установкой начального значения из настроек
+        self._interval_spin.blockSignals(True)
+        initial_value = self.settings.get("scan_interval_sec", 5)
+        self._interval_spin.setValue(initial_value)
+        self._interval_spin.blockSignals(False)
         self._interval_spin.setSuffix(" сек")
         self._interval_spin.setFixedWidth(100)
         self._interval_spin.setStyleSheet("""
@@ -240,7 +244,7 @@ class SettingsPanel(QWidget):
 
         lines = [
             ("Kristina Helper", "#e6edf3", "14px", "700"),
-            ("Версия 1.1.0", "#8b949e", "12px", "400"),
+            ("Версия 1.1.1", "#8b949e", "12px", "400"),
             ("Мониторинг и блокировка процессов Windows + AI-чат", "#8b949e", "12px", "400"),
         ]
         for text, color, size, weight in lines:
