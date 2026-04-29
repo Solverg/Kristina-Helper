@@ -187,10 +187,15 @@ class ProcessesPanel(QWidget):
         self._interval_slider = QSlider(Qt.Orientation.Horizontal)
         self._interval_slider.setMinimum(1)   # 1 секунда
         self._interval_slider.setMaximum(60)  # 60 секунд
-        self._interval_slider.setValue(self.settings.get("scan_interval_sec", 5))
         self._interval_slider.setFixedWidth(200)
 
-        self._interval_value_label = QLabel(f"{self._interval_slider.value()} сек")
+        # Блокируем сигналы перед установкой начального значения из настроек
+        self._interval_slider.blockSignals(True)
+        initial_value = self.settings.get("scan_interval_sec", 5)
+        self._interval_slider.setValue(initial_value)
+        self._interval_slider.blockSignals(False)
+
+        self._interval_value_label = QLabel(f"{initial_value} сек")
         self._interval_value_label.setStyleSheet("color: #58a6ff; font-weight: 600; min-width: 50px;")
 
         self._interval_slider.valueChanged.connect(self._on_interval_changed)
@@ -431,7 +436,7 @@ class ProcessesPanel(QWidget):
         layout = QHBoxLayout(cell)
         layout.setContentsMargins(6, 0, 6, 0)
         layout.setSpacing(0)
-        layout.setAlignment(_Qt.AlignmentFlag.AlignCenter)
+        layout.setAlignment(_Qt.AlignmentFlag.AlignLeft | _Qt.AlignmentFlag.AlignVCenter)
 
         btn = QPushButton("✨ Узнать")
         btn.setObjectName("desc_btn")
