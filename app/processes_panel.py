@@ -2,6 +2,7 @@
 Kristina Helper — панель управления процессами.
 """
 
+import itertools
 import json
 import re
 import requests
@@ -62,53 +63,70 @@ class ProcessDescriberWorker(QThread):
         return (parts[0] or {}).get("text", "") if parts else ""
 
     def run(self):
+        url = self._get_model_url()
+
+        # Добавляем жесткие ограничения прямо в текст
         prompt = (
-            f"Ты системный эксперт Windows. Проанализируй процесс. Имя: '{self.process_name}', "
-            f"Путь к файлу: '{self.exe_path}'.\n"
-            "Верни ответ СТРОГО в формате JSON без markdown разметки с двумя ключами:\n"
-            "1. 'description': одно короткое предложение на русском о назначении процесса.\n"
-            "2. 'status': строка, либо 'verified' (если процесс системный или от известного разработчика), "
-            "либо 'dangerous' (если путь подозрительный или это потенциальное вредоносное ПО/майнер).\n"
+            f"Проанализируй процесс Windows.\n"
+            f"Имя: '{self.process_name}'\n"
+            f"Путь: '{self.exe_path}'\n"
+            "Верни короткое описание его назначения.\n"
+            "ПРАВИЛО: Пиши сразу суть (например: 'Обеспечивает работу звуковой подсистемы'). "
+            "КАТЕГОРИЧЕСКИ ЗАПРЕЩАЕТСЯ писать имя файла и конструкцию 'это...' в начале предложения."
         )
+
         payload = {
             "contents": [{"role": "user", "parts": [{"text": prompt}]}],
             "generationConfig": {
                 "temperature": 0.1,
-                "maxOutputTokens": 400,
-                "response_mime_type": "application/json"
+                "response_mime_type": "application/json",
+                "response_schema": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "description": {
+                            "type": "STRING",
+                            "description": "Суть процесса в одном предложении. Без названия файла и без слова 'это' в начале.",
+                        },
+                        "status": {
+                            "type": "STRING",
+                            "enum": ["verified", "dangerous", "unknown"],
+                            "description": "verified (известный/системный) или dangerous (подозрительный/майнер).",
+                        },
+                    },
+                    "required": ["description", "status"],
+                },
             },
         }
 
-        url = self._get_model_url()
         try:
-            response = requests.post(
+            resp = requests.post(
                 f"{url}?key={self.api_key}",
-                headers={"Content-Type": "application/json"},
                 json=payload,
+                headers={"Content-Type": "application/json"},
                 timeout=15,
             )
-            response.raise_for_status()
-            result = response.json()
-
-            text = self._extract_text(result).strip()
-            if text:
-                text = re.sub(r"^```(?:json)?|```$", "", text, flags=re.IGNORECASE | re.MULTILINE).strip()
-
-                try:
-                    data = json.loads(text)
-                    desc = data.get("description", "Нет описания.")
-                    status = data.get("status", "unknown")
-                    self.description_ready.emit(self.process_name, desc, status)
-                except json.JSONDecodeError:
-                    fallback_desc = "Ошибка формата ответа ИИ."
-                    match = re.search(r'"description"\s*:\s*"([^"]+)', text)
-                    if match:
-                        fallback_desc = match.group(1) + "..."
-                    self.description_ready.emit(self.process_name, fallback_desc, "unknown")
+            resp.raise_for_status()
+            text = self._extract_text(resp.json()).strip()
+            if not text:
+                self.error_occurred.emit(self.process_name, "Пустой ответ модели.")
                 return
-            self.error_occurred.emit(self.process_name, "Пустой ответ модели.")
+
+            data = json.loads(text)
+            final_desc = (data.get("description") or "Нет описания.").strip()
+            final_status = (data.get("status") or "unknown").strip().lower()
+            if final_status not in {"verified", "dangerous", "unknown"}:
+                final_status = "unknown"
+            self.description_ready.emit(self.process_name, final_desc, final_status)
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 429:
+                self.error_occurred.emit(self.process_name, "Превышен лимит запросов к ИИ. Попробуйте позже.")
+            else:
+                self.error_occurred.emit(self.process_name, f"Ошибка API: {e.response.status_code}")
+        except json.JSONDecodeError:
+            self.error_occurred.emit(self.process_name, "Некорректный JSON в ответе модели.")
         except Exception as e:
-            self.error_occurred.emit(self.process_name, f"Ошибка сети или API: {str(e)}")
+            self.error_occurred.emit(self.process_name, f"Внутренняя ошибка: {str(e)}")
+
 
 
 class StatsCard(QWidget):
@@ -154,6 +172,11 @@ class ProcessesPanel(QWidget):
         self._all_processes: list[ProcessEntry] = []
         self._fetching_descriptions: set[str] = set()
         self._active_workers: list[ProcessDescriberWorker] = []
+        self._model_pool = itertools.cycle([
+            "gemini-3-flash",
+            "gemini-2.5-flash-lite",
+            "gemini-2.5-flash",
+        ])
         self._build_ui()
         self._connect_signals()
 
@@ -515,13 +538,13 @@ class ProcessesPanel(QWidget):
             return
 
         if force:
-            self.pm.save_description(process_name, "")
+            self.pm.save_description(process_name, "", "unknown")
 
         self._fetching_descriptions.add(process_key)
         self._filter_table()
 
-        preferred_model = self.settings.get("gemini_model", "gemini-3-flash-preview")
-        worker = ProcessDescriberWorker(api_key, process_name, exe_path, preferred_model=preferred_model)
+        current_model = next(self._model_pool)
+        worker = ProcessDescriberWorker(api_key, process_name, exe_path, preferred_model=current_model)
         worker.description_ready.connect(self._on_description_ready)
         worker.error_occurred.connect(self._on_description_error)
         worker.finished.connect(lambda: self._on_worker_finished(worker))
