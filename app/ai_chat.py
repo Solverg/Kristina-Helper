@@ -20,7 +20,7 @@ class GeminiWorker(QThread):
     response_ready = pyqtSignal(str, str)
     error_occurred = pyqtSignal(str)
 
-    MODEL = "gemini-2.5-flash-lite"
+    DEFAULT_MODEL = "gemini-3.1-flash-preview"
     API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 
     def __init__(self, api_key: str, history: list[dict], user_message: str, preferred_model: str | None = None):
@@ -94,7 +94,8 @@ class GeminiWorker(QThread):
                 }
             }
 
-            url = f"{self.API_BASE}/{self.MODEL}:generateContent?key={self.api_key}"
+            model = self.preferred_model or self.DEFAULT_MODEL
+            url = f"{self.API_BASE}/{model}:generateContent?key={self.api_key}"
             data = json.dumps(payload).encode("utf-8")
             req = urllib.request.Request(
                 url,
@@ -106,7 +107,7 @@ class GeminiWorker(QThread):
                 result = json.loads(resp.read().decode("utf-8"))
             text = self._extract_text(result).strip()
             if text:
-                self.response_ready.emit(text, self.MODEL)
+                self.response_ready.emit(text, model)
                 return
             self.error_occurred.emit("Пустой ответ модели. Попробуй переформулировать вопрос.")
 

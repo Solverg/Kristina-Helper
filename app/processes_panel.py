@@ -67,10 +67,13 @@ class ProcessDescriberWorker(QThread):
 
         # --- ЗАПРОС 1: ОПИСАНИЕ ---
         prompt_desc = (
-            f"Ты системный эксперт Windows. Расскажи коротко об этом процессе.\n"
+            f"Ты системный эксперт Windows. Объясни функцию этого процесса.\n"
             f"Имя: '{self.process_name}'\n"
             f"Путь: '{self.exe_path}'\n"
-            "Напиши только одно короткое предложение на русском языке без кавычек и форматирования."
+            f"Напиши суть в одно короткое предложение на русском языке. "
+            f"СТРОГОЕ ПРАВИЛО: Не начинай ответ с имени процесса или пути (не пиши '{self.process_name} — это...'). "
+            f"Сразу пиши, за что он отвечает, начиная с глагола или существительного (например: 'Обеспечивает работу обновлений...' или 'Служба для...'). "
+            f"Никаких кавычек и Markdown-форматирования."
         )
         payload_desc = {
             "contents": [{"role": "user", "parts": [{"text": prompt_desc}]}],
@@ -183,7 +186,7 @@ class ProcessesPanel(QWidget):
         self._fetching_descriptions: set[str] = set()
         self._active_workers: list[ProcessDescriberWorker] = []
         self._model_pool = itertools.cycle([
-            "gemini-3-flash",
+            "gemini-3.1-flash-preview", # Актуальная версия 3-й линейки
             "gemini-2.5-flash-lite",
             "gemini-2.5-flash",
         ])
