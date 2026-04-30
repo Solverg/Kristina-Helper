@@ -72,7 +72,11 @@ class ProcessDescriberWorker(QThread):
         )
         payload = {
             "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-            "generationConfig": {"temperature": 0.1, "maxOutputTokens": 140},
+            "generationConfig": {
+                "temperature": 0.1,
+                "maxOutputTokens": 400,
+                "response_mime_type": "application/json"
+            },
         }
 
         url = self._get_model_url()
@@ -88,8 +92,7 @@ class ProcessDescriberWorker(QThread):
 
             text = self._extract_text(result).strip()
             if text:
-                if text.startswith("```"):
-                    text = text.split("\n", 1)[-1].rsplit("\n", 1)[0]
+                text = re.sub(r"^```(?:json)?|```$", "", text, flags=re.IGNORECASE | re.MULTILINE).strip()
 
                 try:
                     data = json.loads(text)
@@ -97,7 +100,11 @@ class ProcessDescriberWorker(QThread):
                     status = data.get("status", "unknown")
                     self.description_ready.emit(self.process_name, desc, status)
                 except json.JSONDecodeError:
-                    self.description_ready.emit(self.process_name, text, "unknown")
+                    fallback_desc = "Ошибка формата ответа ИИ."
+                    match = re.search(r'"description"\s*:\s*"([^"]+)', text)
+                    if match:
+                        fallback_desc = match.group(1) + "..."
+                    self.description_ready.emit(self.process_name, fallback_desc, "unknown")
                 return
             self.error_occurred.emit(self.process_name, "Пустой ответ модели.")
         except Exception as e:
