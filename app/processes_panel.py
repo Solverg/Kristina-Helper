@@ -183,7 +183,7 @@ class ProcessesPanel(QWidget):
         self._fetching_descriptions: set[str] = set()
         self._active_workers: list[ProcessDescriberWorker] = []
         self._model_pool = itertools.cycle([
-            "gemini-3-flash",
+            "gemini-3.1-flash-preview", # Актуальная версия 3-й линейки
             "gemini-2.5-flash-lite",
             "gemini-2.5-flash",
         ])
