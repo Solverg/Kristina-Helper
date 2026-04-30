@@ -27,6 +27,7 @@ class ProcessEntry:
     memory_mb: float
     is_blocked: bool = False
     description: str = ""
+    security_status: str = "unknown"
     is_running: bool = True
 
 
@@ -54,7 +55,7 @@ class ProcessManager(QObject):
         super().__init__(parent)
 
         self.block_rules: dict[str, BlockRule] = {}  # name -> BlockRule
-        self.process_descriptions: dict[str, str] = {}
+        self.process_descriptions: dict[str, dict | str] = {}
         self._last_processes: list[ProcessEntry] = []
         self._total_killed = 0
 
@@ -91,18 +92,27 @@ class ProcessManager(QObject):
                 with open(DESCRIPTIONS_PATH, "r", encoding="utf-8") as f:
                     loaded = json.load(f)
                 if isinstance(loaded, dict):
-                    self.process_descriptions = {
-                        str(name).lower(): str(description)
-                        for name, description in loaded.items()
-                    }
+                    self.process_descriptions = {}
+                    for name, data in loaded.items():
+                        # Поддержка старого формата кэша (если там были просто строки)
+                        if isinstance(data, str):
+                            self.process_descriptions[str(name).lower()] = {
+                                "description": data,
+                                "status": "unknown"
+                            }
+                        else:
+                            self.process_descriptions[str(name).lower()] = data
                     logger.info(f"Загружено описаний процессов: {len(self.process_descriptions)}")
         except Exception as e:
             logger.error(f"Ошибка загрузки описаний: {e}")
 
-    def save_description(self, process_name: str, description: str):
+    def save_description(self, process_name: str, description: str, status: str = "unknown"):
         """Сохранить описание процесса в кэш и JSON."""
         key = process_name.lower()
-        self.process_descriptions[key] = description
+        self.process_descriptions[key] = {
+            "description": description,
+            "status": status
+        }
         try:
             self._ensure_config_dir()
             with open(DESCRIPTIONS_PATH, "w", encoding="utf-8") as f:
@@ -168,6 +178,15 @@ class ProcessManager(QObject):
                 proc_name = info["name"] or ""
                 key = proc_name.lower()
                 running_names.add(key)
+                desc_data = self.process_descriptions.get(key, {})
+
+                if isinstance(desc_data, dict):
+                    desc_text = desc_data.get("description", "")
+                    sec_status = desc_data.get("status", "unknown")
+                else:
+                    desc_text = desc_data if isinstance(desc_data, str) else ""
+                    sec_status = "unknown"
+
                 entries.append(ProcessEntry(
                     pid=info["pid"],
                     name=proc_name,
@@ -176,7 +195,8 @@ class ProcessManager(QObject):
                     cpu_percent=round(info["cpu_percent"] or 0, 1),
                     memory_mb=round(mem_mb, 1),
                     is_blocked=self.is_blocked(proc_name),
-                    description=self.process_descriptions.get(key, ""),
+                    description=desc_text,
+                    security_status=sec_status,
                     is_running=True,
                 ))
             except (psutil.NoSuchProcess, psutil.AccessDenied):
@@ -186,6 +206,14 @@ class ProcessManager(QObject):
         for key, rule in self.block_rules.items():
             if not rule.enabled or key in running_names:
                 continue
+            desc_data = self.process_descriptions.get(key, {})
+            if isinstance(desc_data, dict):
+                desc_text = desc_data.get("description", "")
+                sec_status = desc_data.get("status", "unknown")
+            else:
+                desc_text = desc_data if isinstance(desc_data, str) else ""
+                sec_status = "unknown"
+
             entries.append(ProcessEntry(
                 pid=0,
                 name=rule.name,
@@ -194,7 +222,8 @@ class ProcessManager(QObject):
                 cpu_percent=0.0,
                 memory_mb=0.0,
                 is_blocked=True,
-                description=self.process_descriptions.get(key, ""),
+                description=desc_text,
+                security_status=sec_status,
                 is_running=False,
             ))
         return sorted(entries, key=lambda e: e.name.lower())

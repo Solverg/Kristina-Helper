@@ -3,8 +3,8 @@ Kristina Helper — панель управления процессами.
 """
 
 import json
-import urllib.error
-import urllib.request
+import re
+import requests
 from collections import defaultdict
 
 from PyQt6.QtWidgets import (
@@ -22,44 +22,35 @@ from app.process_manager import ProcessManager, ProcessEntry
 class ProcessDescriberWorker(QThread):
     """Фоновый запрос к Gemini для описания процесса."""
 
-    description_ready = pyqtSignal(str, str)  # process_name, description
+    description_ready = pyqtSignal(str, str, str)
     error_occurred = pyqtSignal(str, str)     # process_name, error
 
     API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
-    MODEL = "gemini-2.5-flash-lite"
+    DEFAULT_MODEL = "gemini-2.5-flash-lite"
 
-    def __init__(self, api_key: str, process_name: str, preferred_model: str | None = None):
+    def __init__(self, api_key: str, process_name: str, exe_path: str, preferred_model: str | None = None):
         super().__init__()
         self.api_key = api_key
         self.process_name = process_name
+        self.exe_path = self._anonymize_path(exe_path)
         self.preferred_model = (preferred_model or "").strip()
 
     @staticmethod
-    def _extract_text(result: dict) -> str:
-        candidates = result.get("candidates") or []
-        if not candidates:
-            return ""
-        content = (candidates[0] or {}).get("content") or {}
-        parts = content.get("parts") or []
-        return (parts[0] or {}).get("text", "") if parts else ""
+    def _anonymize_path(path: str) -> str:
+        """
+        Заменяет реальное имя пользователя в путях вида C:\\Users\\<Name>\\... на 'User'.
+        """
+        if not path:
+            return "Путь недоступен"
+        return re.sub(
+            r"(?i)([a-z]:\\users\\)[^\\]+(\\.*)?",
+            r"\g<1>User\2",
+            path
+        )
 
-    @staticmethod
-    def _extract_text(result: dict) -> str:
-        candidates = result.get("candidates") or []
-        if not candidates:
-            return ""
-        content = (candidates[0] or {}).get("content") or {}
-        parts = content.get("parts") or []
-        return (parts[0] or {}).get("text", "") if parts else ""
-
-    @staticmethod
-    def _extract_text(result: dict) -> str:
-        candidates = result.get("candidates") or []
-        if not candidates:
-            return ""
-        content = (candidates[0] or {}).get("content") or {}
-        parts = content.get("parts") or []
-        return (parts[0] or {}).get("text", "") if parts else ""
+    def _get_model_url(self) -> str:
+        model = self.preferred_model or self.DEFAULT_MODEL
+        return f"{self.API_BASE}/{model}:generateContent"
 
     @staticmethod
     def _extract_text(result: dict) -> str:
@@ -72,37 +63,45 @@ class ProcessDescriberWorker(QThread):
 
     def run(self):
         prompt = (
-            "Ты системный эксперт Windows. Кратко объясни назначение процесса Windows "
-            f"'{self.process_name}'. "
-            "Ответь одним коротким предложением на русском языке. "
-            "Начни сразу с сути, без повторения имени процесса, без конструкции «это ...», "
-            "без советов, предупреждений и дополнительных пояснений."
+            f"Ты системный эксперт Windows. Проанализируй процесс. Имя: '{self.process_name}', "
+            f"Путь к файлу: '{self.exe_path}'.\n"
+            "Верни ответ СТРОГО в формате JSON без markdown разметки с двумя ключами:\n"
+            "1. 'description': одно короткое предложение на русском о назначении процесса.\n"
+            "2. 'status': строка, либо 'verified' (если процесс системный или от известного разработчика), "
+            "либо 'dangerous' (если путь подозрительный или это потенциальное вредоносное ПО/майнер).\n"
         )
         payload = {
             "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-            "generationConfig": {"temperature": 0.2, "maxOutputTokens": 140},
+            "generationConfig": {"temperature": 0.1, "maxOutputTokens": 140},
         }
 
-        url = f"{self.API_BASE}/{self.MODEL}:generateContent?key={self.api_key}"
+        url = self._get_model_url()
         try:
-            req = urllib.request.Request(
-                url,
-                data=json.dumps(payload).encode("utf-8"),
+            response = requests.post(
+                f"{url}?key={self.api_key}",
                 headers={"Content-Type": "application/json"},
-                method="POST",
+                json=payload,
+                timeout=15,
             )
-            with urllib.request.urlopen(req, timeout=15) as resp:
-                result = json.loads(resp.read().decode("utf-8"))
+            response.raise_for_status()
+            result = response.json()
+
             text = self._extract_text(result).strip()
             if text:
-                self.description_ready.emit(self.process_name, text)
+                if text.startswith("```"):
+                    text = text.split("\n", 1)[-1].rsplit("\n", 1)[0]
+
+                try:
+                    data = json.loads(text)
+                    desc = data.get("description", "Нет описания.")
+                    status = data.get("status", "unknown")
+                    self.description_ready.emit(self.process_name, desc, status)
+                except json.JSONDecodeError:
+                    self.description_ready.emit(self.process_name, text, "unknown")
                 return
             self.error_occurred.emit(self.process_name, "Пустой ответ модели.")
-        except urllib.error.HTTPError as e:
-            body = e.read().decode("utf-8", errors="replace")
-            self.error_occurred.emit(self.process_name, f"HTTP {e.code}: {body[:220]}")
         except Exception as e:
-            self.error_occurred.emit(self.process_name, str(e))
+            self.error_occurred.emit(self.process_name, f"Ошибка сети или API: {str(e)}")
 
 
 class StatsCard(QWidget):
@@ -327,6 +326,14 @@ class ProcessesPanel(QWidget):
         ]
         self._populate_table(filtered)
 
+    def _get_status_icon(self, status: str) -> str:
+        """Возвращает эмодзи в зависимости от статуса безопасности."""
+        if status == "verified":
+            return "🛡️ "
+        if status == "dangerous":
+            return "⚠️ "
+        return "❔ "
+
     def _populate_table(self, processes: list[ProcessEntry]):
         # Сохраняем состояние раскрытых узлов по ключу (имя, путь)
         expanded_groups = set()
@@ -353,12 +360,13 @@ class ProcessesPanel(QWidget):
             is_blocked = any(p.is_blocked for p in procs)
 
             rep = procs[0]
+            icon = self._get_status_icon(rep.security_status)
             exe_display = rep.exe if rep.exe else "Путь недоступен"
 
             # Если процесс всего один с таким именем и путем
             if len(procs) == 1:
                 parent_item = QTreeWidgetItem([
-                    rep.name,
+                    f"{icon}{rep.name}",
                     str(rep.pid),
                     rep.status,
                     f"{rep.cpu_percent:.1f}",
@@ -374,7 +382,7 @@ class ProcessesPanel(QWidget):
             # Если процессов несколько — стакаем
             else:
                 parent_item = QTreeWidgetItem([
-                    f"{rep.name} ({len(procs)})",
+                    f"{icon}{rep.name} ({len(procs)})",
                     "---",
                     "Запущен",
                     f"{total_cpu:.1f}",
@@ -392,8 +400,9 @@ class ProcessesPanel(QWidget):
                     parent_item.setExpanded(True)
 
                 for p in sorted(procs, key=lambda x: x.memory_mb, reverse=True):
+                    child_icon = self._get_status_icon(p.security_status)
                     child_item = QTreeWidgetItem([
-                        f"   ↳ {p.name}",
+                        f"   ↳ {child_icon}{p.name}",
                         str(p.pid),
                         p.status,
                         f"{p.cpu_percent:.1f}",
@@ -421,12 +430,12 @@ class ProcessesPanel(QWidget):
             item.setForeground(6, QColor("#f0883e"))
         elif p.description:
             self._table.setItemWidget(
-                item, 6, self._build_description_cell(p.description, p.name)
+                item, 6, self._build_description_cell(p.description, p.name, p.exe)
             )
         else:
-            self._table.setItemWidget(item, 6, self._build_ask_button_cell(p.name))
+            self._table.setItemWidget(item, 6, self._build_ask_button_cell(p.name, p.exe))
 
-    def _build_ask_button_cell(self, process_name: str) -> QWidget:
+    def _build_ask_button_cell(self, process_name: str, exe_path: str) -> QWidget:
         from PyQt6.QtCore import Qt as _Qt
         cell = QWidget()
         cell.setAttribute(_Qt.WidgetAttribute.WA_TranslucentBackground)
@@ -451,11 +460,11 @@ class ProcessesPanel(QWidget):
             }
             QPushButton#desc_btn:hover { background-color: #2ea043; }
         """)
-        btn.clicked.connect(lambda _checked, name=process_name: self._fetch_description(name))
+        btn.clicked.connect(lambda _checked, n=process_name, e=exe_path: self._fetch_description(n, e))
         layout.addWidget(btn)
         return cell
 
-    def _build_description_cell(self, text: str, process_name: str) -> QWidget:
+    def _build_description_cell(self, text: str, process_name: str, exe_path: str) -> QWidget:
         cell = QWidget()
         layout = QHBoxLayout(cell)
         layout.setContentsMargins(4, 2, 4, 2)
@@ -486,13 +495,13 @@ class ProcessesPanel(QWidget):
                 background-color: #3b434c;
             }
         """)
-        refresh_btn.clicked.connect(lambda _checked, name=process_name: self._fetch_description(name, force=True))
+        refresh_btn.clicked.connect(lambda _checked, n=process_name, e=exe_path: self._fetch_description(n, e, force=True))
 
         layout.addWidget(text_label, stretch=1)
         layout.addWidget(refresh_btn, stretch=0, alignment=Qt.AlignmentFlag.AlignVCenter)
         return cell
 
-    def _fetch_description(self, process_name: str, force: bool = False):
+    def _fetch_description(self, process_name: str, exe_path: str = "", force: bool = False):
         api_key = self.settings.get("gemini_api_key", "").strip()
         process_key = process_name.lower()
         if not api_key or process_key in self._fetching_descriptions:
@@ -505,7 +514,7 @@ class ProcessesPanel(QWidget):
         self._filter_table()
 
         preferred_model = self.settings.get("gemini_model", "gemini-3-flash-preview")
-        worker = ProcessDescriberWorker(api_key, process_name, preferred_model=preferred_model)
+        worker = ProcessDescriberWorker(api_key, process_name, exe_path, preferred_model=preferred_model)
         worker.description_ready.connect(self._on_description_ready)
         worker.error_occurred.connect(self._on_description_error)
         worker.finished.connect(lambda: self._on_worker_finished(worker))
@@ -517,10 +526,10 @@ class ProcessesPanel(QWidget):
             self._active_workers.remove(worker)
         worker.deleteLater()
 
-    def _on_description_ready(self, process_name: str, description: str):
+    def _on_description_ready(self, process_name: str, description: str, status: str):
         self._fetching_descriptions.discard(process_name.lower())
         if description:
-            self.pm.save_description(process_name, description)
+            self.pm.save_description(process_name, description, status)
         self._manual_refresh()
 
     def _on_description_error(self, process_name: str, error: str):
