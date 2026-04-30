@@ -2,6 +2,7 @@
 Kristina Helper — панель управления процессами.
 """
 
+import itertools
 import re
 import time
 import requests
@@ -181,6 +182,11 @@ class ProcessesPanel(QWidget):
         self._all_processes: list[ProcessEntry] = []
         self._fetching_descriptions: set[str] = set()
         self._active_workers: list[ProcessDescriberWorker] = []
+        self._model_pool = itertools.cycle([
+            "gemini-3-flash",
+            "gemini-2.5-flash-lite",
+            "gemini-2.5-flash",
+        ])
         self._build_ui()
         self._connect_signals()
 
@@ -542,13 +548,13 @@ class ProcessesPanel(QWidget):
             return
 
         if force:
-            self.pm.save_description(process_name, "")
+            self.pm.save_description(process_name, "", "unknown")
 
         self._fetching_descriptions.add(process_key)
         self._filter_table()
 
-        preferred_model = self.settings.get("gemini_model", "gemini-3-flash-preview")
-        worker = ProcessDescriberWorker(api_key, process_name, exe_path, preferred_model=preferred_model)
+        current_model = next(self._model_pool)
+        worker = ProcessDescriberWorker(api_key, process_name, exe_path, preferred_model=current_model)
         worker.description_ready.connect(self._on_description_ready)
         worker.error_occurred.connect(self._on_description_error)
         worker.finished.connect(lambda: self._on_worker_finished(worker))
