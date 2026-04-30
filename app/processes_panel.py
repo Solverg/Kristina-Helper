@@ -3,6 +3,7 @@ Kristina Helper — панель управления процессами.
 """
 
 import itertools
+import json
 import re
 import time
 import requests
@@ -65,78 +66,65 @@ class ProcessDescriberWorker(QThread):
     def run(self):
         url = self._get_model_url()
 
-        # --- ЗАПРОС 1: ОПИСАНИЕ ---
-        prompt_desc = (
-            f"Ты системный эксперт Windows. Объясни функцию этого процесса.\n"
+        # Добавляем жесткие ограничения прямо в текст
+        prompt = (
+            f"Проанализируй процесс Windows.\n"
             f"Имя: '{self.process_name}'\n"
             f"Путь: '{self.exe_path}'\n"
-            f"Напиши суть в одно короткое предложение на русском языке. "
-            f"СТРОГОЕ ПРАВИЛО: Не начинай ответ с имени процесса или пути (не пиши '{self.process_name} — это...'). "
-            f"Сразу пиши, за что он отвечает, начиная с глагола или существительного (например: 'Обеспечивает работу обновлений...' или 'Служба для...'). "
-            f"Никаких кавычек и Markdown-форматирования."
+            "Верни короткое описание его назначения.\n"
+            "ПРАВИЛО: Пиши сразу суть (например: 'Обеспечивает работу звуковой подсистемы'). "
+            "КАТЕГОРИЧЕСКИ ЗАПРЕЩАЕТСЯ писать имя файла и конструкцию 'это...' в начале предложения."
         )
-        payload_desc = {
-            "contents": [{"role": "user", "parts": [{"text": prompt_desc}]}],
-            "generationConfig": {"temperature": 0.2, "maxOutputTokens": 100},
-        }
 
-        # --- ЗАПРОС 2: ВЕРИФИКАЦИЯ (СТАТУС) ---
-        prompt_status = (
-            f"Оцени безопасность процесса Windows.\n"
-            f"Имя: '{self.process_name}'\n"
-            f"Путь: '{self.exe_path}'\n"
-            "Ответь СТРОГО одним словом: 'verified' (если процесс системный или от известного разработчика) "
-            "или 'dangerous' (если путь подозрительный или это потенциально нежелательное ПО). Никаких других символов."
-        )
-        payload_status = {
-            "contents": [{"role": "user", "parts": [{"text": prompt_status}]}],
+        payload = {
+            "contents": [{"role": "user", "parts": [{"text": prompt}]}],
             "generationConfig": {
-                "temperature": 0.0,
-                "maxOutputTokens": 10,
+                "temperature": 0.1,
+                "response_mime_type": "application/json",
+                "response_schema": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "description": {
+                            "type": "STRING",
+                            "description": "Суть процесса в одном предложении. Без названия файла и без слова 'это' в начале.",
+                        },
+                        "status": {
+                            "type": "STRING",
+                            "enum": ["verified", "dangerous", "unknown"],
+                            "description": "verified (известный/системный) или dangerous (подозрительный/майнер).",
+                        },
+                    },
+                    "required": ["description", "status"],
+                },
             },
         }
 
         try:
-            # 1. Получаем описание
-            resp_desc = requests.post(
+            resp = requests.post(
                 f"{url}?key={self.api_key}",
-                json=payload_desc,
+                json=payload,
                 headers={"Content-Type": "application/json"},
                 timeout=15,
             )
-            resp_desc.raise_for_status()
-            desc_text = self._extract_text(resp_desc.json()).strip()
+            resp.raise_for_status()
+            text = self._extract_text(resp.json()).strip()
+            if not text:
+                self.error_occurred.emit(self.process_name, "Пустой ответ модели.")
+                return
 
-            # Пауза в 1.5 секунды, чтобы избежать ошибки 429 (Too Many Requests) от API
-            time.sleep(1.5)
-
-            # 2. Получаем статус
-            resp_status = requests.post(
-                f"{url}?key={self.api_key}",
-                json=payload_status,
-                headers={"Content-Type": "application/json"},
-                timeout=15,
-            )
-            resp_status.raise_for_status()
-            status_text = self._extract_text(resp_status.json()).strip().lower()
-
-            # --- ОБРАБОТКА И ЭМИТ СИГНАЛА ---
-            final_desc = desc_text if desc_text else "Нет описания."
-
-            # Безопасное извлечение статуса (даже если ИИ добавил точку в конце)
-            final_status = "unknown"
-            if "verified" in status_text:
-                final_status = "verified"
-            elif "dangerous" in status_text:
-                final_status = "dangerous"
-
+            data = json.loads(text)
+            final_desc = (data.get("description") or "Нет описания.").strip()
+            final_status = (data.get("status") or "unknown").strip().lower()
+            if final_status not in {"verified", "dangerous", "unknown"}:
+                final_status = "unknown"
             self.description_ready.emit(self.process_name, final_desc, final_status)
-
         except requests.exceptions.HTTPError as e:
             if e.response.status_code == 429:
                 self.error_occurred.emit(self.process_name, "Превышен лимит запросов к ИИ. Попробуйте позже.")
             else:
                 self.error_occurred.emit(self.process_name, f"Ошибка API: {e.response.status_code}")
+        except json.JSONDecodeError:
+            self.error_occurred.emit(self.process_name, "Некорректный JSON в ответе модели.")
         except Exception as e:
             self.error_occurred.emit(self.process_name, f"Внутренняя ошибка: {str(e)}")
 
