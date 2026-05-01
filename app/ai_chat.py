@@ -214,7 +214,7 @@ class AIChatWidget(QWidget):
 
         title = QLabel("✨ AI-чат — Кристина")
         title.setObjectName("section_title")
-        self._model_subtitle = QLabel("gemini-2.5-flash-lite")
+        self._model_subtitle = QLabel(self._selected_model_name())
         self._model_subtitle.setObjectName("section_subtitle")
 
         self._status_badge = QLabel("● Готова")
@@ -300,6 +300,7 @@ class AIChatWidget(QWidget):
         if not text:
             return
 
+        self._model_subtitle.setText(self._selected_model_name())
         llm_model = self.settings.get("llm_model", "default")
         if llm_model == "groq" and not self.settings.get("groq_api_key", "").strip():
             self._add_bot_message("⚠️ Укажи Groq API ключ в настройках.")
@@ -371,3 +372,9 @@ class AIChatWidget(QWidget):
         """Вставить имя процесса в поле ввода для быстрого вопроса."""
         self._input.setText(f"Что делает процесс {process_name}? Стоит ли его заблокировать?")
         self._input.setFocus()
+
+    def _selected_model_name(self) -> str:
+        llm_model = self.settings.get("llm_model", "default")
+        if llm_model == "groq":
+            return "llama-3.3-70b-versatile"
+        return self.settings.get("gemini_model", ChatWorker.DEFAULT_MODEL)
