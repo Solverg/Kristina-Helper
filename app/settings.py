@@ -12,7 +12,9 @@ SETTINGS_PATH = os.path.join(os.path.expanduser("~"), ".kristina_helper", "setti
 
 DEFAULTS = {
     "gemini_api_key": "",
-    "gemini_model": "gemini-3.1-flash-preview", # Обновленный дефолт
+    "gemini_model": "gemini-3.1-flash-preview",
+    "llm_model": "default",
+    "groq_api_key": "",
     "scan_interval_sec": 5,
     "autostart": False,
     "minimize_to_tray": True,
