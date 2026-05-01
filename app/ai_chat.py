@@ -5,6 +5,7 @@ Kristina Helper — виджет AI-чата (Gemini Flash).
 import json
 import urllib.request
 import urllib.error
+from groq import Groq
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
     QLineEdit, QPushButton,
@@ -14,8 +15,8 @@ from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer
 
 # ── Поток для запроса к Gemini ────────────────────────────────────────────────
 
-class GeminiWorker(QThread):
-    """Отправляет запрос к Gemini API в фоновом потоке."""
+class ChatWorker(QThread):
+    """Отправляет запрос к выбранной LLM в фоновом потоке."""
 
     response_ready = pyqtSignal(str, str)
     error_occurred = pyqtSignal(str)
@@ -23,9 +24,9 @@ class GeminiWorker(QThread):
     DEFAULT_MODEL = "gemini-3.1-flash-preview"
     API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 
-    def __init__(self, api_key: str, history: list[dict], user_message: str, preferred_model: str | None = None):
+    def __init__(self, settings, history: list[dict], user_message: str, preferred_model: str | None = None):
         super().__init__()
-        self.api_key = api_key
+        self.settings = settings
         self.history = history
         self.user_message = user_message
         self.preferred_model = (preferred_model or "").strip()
@@ -64,6 +65,11 @@ class GeminiWorker(QThread):
 
     def run(self):
         try:
+            llm_model = self.settings.get("llm_model", "default")
+            if llm_model == "groq":
+                self._run_groq()
+                return
+
             # Формируем contents из истории
             contents = []
             for msg in self.history:
@@ -95,7 +101,11 @@ class GeminiWorker(QThread):
             }
 
             model = self.preferred_model or self.DEFAULT_MODEL
-            url = f"{self.API_BASE}/{model}:generateContent?key={self.api_key}"
+            api_key = self.settings.get("gemini_api_key", "").strip()
+            if not api_key:
+                self.error_occurred.emit("Не указан Gemini API ключ в настройках.")
+                return
+            url = f"{self.API_BASE}/{model}:generateContent?key={api_key}"
             data = json.dumps(payload).encode("utf-8")
             req = urllib.request.Request(
                 url,
@@ -116,6 +126,23 @@ class GeminiWorker(QThread):
             self.error_occurred.emit(f"HTTP {e.code}: {body[:200]}")
         except Exception as e:
             self.error_occurred.emit(str(e))
+
+    def _run_groq(self):
+        api_key = self.settings.get("groq_api_key", "").strip()
+        if not api_key:
+            self.error_occurred.emit("Не указан API-ключ Groq в настройках.")
+            return
+        client = Groq(api_key=api_key)
+        completion = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": self.user_message}],
+            temperature=0.7,
+        )
+        text = (completion.choices[0].message.content or "").strip()
+        if not text:
+            self.error_occurred.emit("Пустой ответ от Groq.")
+            return
+        self.response_ready.emit(text, "llama-3.3-70b-versatile")
 
 
 # ── Виджет одного сообщения ───────────────────────────────────────────────────
@@ -172,7 +199,7 @@ class AIChatWidget(QWidget):
         super().__init__(parent)
         self.settings = settings_manager
         self._history: list[dict] = []  # {role: "user"|"model", text: str}
-        self._worker: GeminiWorker | None = None
+        self._worker: ChatWorker | None = None
         self._build_ui()
 
     def _build_ui(self):
@@ -187,7 +214,7 @@ class AIChatWidget(QWidget):
 
         title = QLabel("✨ AI-чат — Кристина")
         title.setObjectName("section_title")
-        self._model_subtitle = QLabel("gemini-2.5-flash-lite")
+        self._model_subtitle = QLabel(self._selected_model_name())
         self._model_subtitle.setObjectName("section_subtitle")
 
         self._status_badge = QLabel("● Готова")
@@ -273,8 +300,12 @@ class AIChatWidget(QWidget):
         if not text:
             return
 
-        api_key = self.settings.get("gemini_api_key", "").strip()
-        if not api_key:
+        self._model_subtitle.setText(self._selected_model_name())
+        llm_model = self.settings.get("llm_model", "default")
+        if llm_model == "groq" and not self.settings.get("groq_api_key", "").strip():
+            self._add_bot_message("⚠️ Укажи Groq API ключ в настройках.")
+            return
+        if llm_model != "groq" and not self.settings.get("gemini_api_key", "").strip():
             self._add_bot_message("⚠️ Введи Gemini API ключ внизу. Его можно получить бесплатно на aistudio.google.com")
             return
 
@@ -283,7 +314,7 @@ class AIChatWidget(QWidget):
         self._set_loading(True)
 
         preferred_model = self.settings.get("gemini_model", "gemini-3-flash-preview")
-        self._worker = GeminiWorker(api_key, self._history.copy(), text, preferred_model=preferred_model)
+        self._worker = ChatWorker(self.settings, self._history.copy(), text, preferred_model=preferred_model)
         self._worker.response_ready.connect(self._on_response)
         self._worker.error_occurred.connect(self._on_error)
         self._worker.finished.connect(self._on_worker_finished)
@@ -341,3 +372,9 @@ class AIChatWidget(QWidget):
         """Вставить имя процесса в поле ввода для быстрого вопроса."""
         self._input.setText(f"Что делает процесс {process_name}? Стоит ли его заблокировать?")
         self._input.setFocus()
+
+    def _selected_model_name(self) -> str:
+        llm_model = self.settings.get("llm_model", "default")
+        if llm_model == "groq":
+            return "llama-3.3-70b-versatile"
+        return self.settings.get("gemini_model", ChatWorker.DEFAULT_MODEL)
