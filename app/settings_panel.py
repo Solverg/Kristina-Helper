@@ -6,7 +6,7 @@ import sys
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QCheckBox, QFrame, QLineEdit,
-    QSpinBox, QGroupBox
+    QSpinBox, QGroupBox, QComboBox
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 
@@ -196,7 +196,7 @@ class SettingsPanel(QWidget):
         layout.addWidget(monitor_card)
 
         # ── Секция: AI ────────────────────────────────────────────────────────
-        ai_card = SectionCard("Gemini AI")
+        ai_card = SectionCard("AI")
 
         key_widget = QWidget()
         key_layout = QHBoxLayout(key_widget)
@@ -226,12 +226,62 @@ class SettingsPanel(QWidget):
         key_layout.addWidget(self._api_key_input)
         key_layout.addWidget(show_btn)
 
+
+        # Выбор LLM
+        self._llm_selector = QComboBox()
+        self._llm_selector.addItem("Стандартная модель (Gemini)", "default")
+        self._llm_selector.addItem("Groq: llama-3.3-70b-versatile", "groq")
+        current_model = self.settings.get("llm_model", "default")
+        model_index = self._llm_selector.findData(current_model)
+        if model_index >= 0:
+            self._llm_selector.setCurrentIndex(model_index)
+        self._llm_selector.currentIndexChanged.connect(self._on_model_changed)
+        ai_card.add_row(SettingRow(
+            "Модель LLM",
+            "Выбери провайдера AI для чата",
+            self._llm_selector
+        ))
+
         ai_card.add_row(SettingRow(
             "Gemini API ключ",
             "Бесплатный ключ: aistudio.google.com → Get API key",
             key_widget
         ))
 
+        groq_key_widget = QWidget()
+        groq_key_layout = QHBoxLayout(groq_key_widget)
+        groq_key_layout.setContentsMargins(0, 0, 0, 0)
+        groq_key_layout.setSpacing(8)
+
+        self._groq_api_input = QLineEdit()
+        self._groq_api_input.setPlaceholderText("Вставь Groq API ключ...")
+        self._groq_api_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self._groq_api_input.setText(self.settings.get("groq_api_key", ""))
+        self._groq_api_input.setFixedWidth(280)
+        self._groq_api_input.textChanged.connect(lambda t: self.settings.set("groq_api_key", t))
+
+        self._groq_show_btn = QPushButton("👁")
+        self._groq_show_btn.setFixedSize(32, 32)
+        self._groq_show_btn.setCheckable(True)
+        self._groq_show_btn.setStyleSheet("""
+            QPushButton { background: #21262d; border: 1px solid #30363d; border-radius: 8px; }
+            QPushButton:checked { background: #1f3a5f; }
+        """)
+        self._groq_show_btn.toggled.connect(lambda v: self._groq_api_input.setEchoMode(
+            QLineEdit.EchoMode.Normal if v else QLineEdit.EchoMode.Password
+        ))
+
+        groq_key_layout.addWidget(self._groq_api_input)
+        groq_key_layout.addWidget(self._groq_show_btn)
+
+        self._groq_row = SettingRow(
+            "Groq API ключ",
+            "Нужен для llama-3.3-70b-versatile через Groq",
+            groq_key_widget
+        )
+        ai_card.add_row(self._groq_row, add_divider=False)
+
+        self._update_api_key_visibility()
         layout.addWidget(ai_card)
 
         # ── Секция: О приложении ──────────────────────────────────────────────
@@ -281,6 +331,15 @@ class SettingsPanel(QWidget):
         layout.addStretch()
 
     # ── Обработчики ───────────────────────────────────────────────────────────
+
+    def _on_model_changed(self):
+        self.settings.set("llm_model", self._llm_selector.currentData())
+        self._update_api_key_visibility()
+
+    def _update_api_key_visibility(self):
+        is_groq = self._llm_selector.currentData() == "groq"
+        self._groq_row.setVisible(is_groq)
+
 
     def _on_autostart_toggled(self, checked: bool):
         if sys.platform == "win32":
