@@ -148,6 +148,8 @@ class StartupPanel(QWidget):
 
             action_btn = QPushButton(btn_text)
             action_btn.setMinimumHeight(30)
+            if not is_active:
+                action_btn.setMinimumWidth(4 + action_btn.sizeHint().width())
             action_btn.setStyleSheet(btn_style)
             action_btn.setCursor(Qt.CursorShape.PointingHandCursor)
             action_btn.clicked.connect(lambda _, startup_item=item: self._on_toggle(startup_item))

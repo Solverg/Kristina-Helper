@@ -349,7 +349,7 @@ class MainWindow(QMainWindow):
     def check_for_updates(self):
         current_version = QApplication.instance().applicationVersion()
         if not current_version:
-            current_version = "1.2.0"
+            current_version = "1.2.1"
 
         self.updater_thread = UpdateChecker(current_version)
         self.updater_thread.update_available.connect(self.show_update_dialog)
