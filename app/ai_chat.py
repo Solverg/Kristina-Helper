@@ -39,30 +39,6 @@ class ChatWorker(QThread):
         parts = content.get("parts") or []
         return (parts[0] or {}).get("text", "") if parts else ""
 
-    def _extract_text(self, result: dict) -> str:
-        candidates = result.get("candidates") or []
-        if not candidates:
-            return ""
-        content = (candidates[0] or {}).get("content") or {}
-        parts = content.get("parts") or []
-        return (parts[0] or {}).get("text", "") if parts else ""
-
-    def _extract_text(self, result: dict) -> str:
-        candidates = result.get("candidates") or []
-        if not candidates:
-            return ""
-        content = (candidates[0] or {}).get("content") or {}
-        parts = content.get("parts") or []
-        return (parts[0] or {}).get("text", "") if parts else ""
-
-    def _extract_text(self, result: dict) -> str:
-        candidates = result.get("candidates") or []
-        if not candidates:
-            return ""
-        content = (candidates[0] or {}).get("content") or {}
-        parts = content.get("parts") or []
-        return (parts[0] or {}).get("text", "") if parts else ""
-
     def run(self):
         try:
             llm_model = self.settings.get("llm_model", "default")
@@ -270,29 +246,6 @@ class AIChatWidget(QWidget):
         input_layout.addWidget(self._send_btn)
         layout.addWidget(input_row)
 
-        # Строка с API ключом
-        key_row = QWidget()
-        key_layout = QHBoxLayout(key_row)
-        key_layout.setContentsMargins(0, 0, 0, 0)
-        key_layout.setSpacing(8)
-
-        key_label = QLabel("API ключ:")
-        key_label.setStyleSheet("color: #8b949e; font-size: 12px;")
-        key_label.setFixedWidth(65)
-
-        self._key_input = QLineEdit()
-        self._key_input.setPlaceholderText("Вставь Gemini API key (бесплатно на aistudio.google.com)")
-        self._key_input.setEchoMode(QLineEdit.EchoMode.Password)
-        self._key_input.setStyleSheet("font-size: 12px; padding: 6px 10px;")
-        self._key_input.setText(self.settings.get("gemini_api_key", ""))
-        self._key_input.textChanged.connect(
-            lambda t: self.settings.set("gemini_api_key", t)
-        )
-
-        key_layout.addWidget(key_label)
-        key_layout.addWidget(self._key_input)
-        layout.addWidget(key_row)
-
     # ── Отправка ──────────────────────────────────────────────────────────────
 
     def _send_message(self):
@@ -306,7 +259,7 @@ class AIChatWidget(QWidget):
             self._add_bot_message("⚠️ Укажи Groq API ключ в настройках.")
             return
         if llm_model != "groq" and not self.settings.get("gemini_api_key", "").strip():
-            self._add_bot_message("⚠️ Введи Gemini API ключ внизу. Его можно получить бесплатно на aistudio.google.com")
+            self._add_bot_message("⚠️ Укажи Gemini API ключ в настройках.")
             return
 
         self._input.clear()
@@ -378,3 +331,7 @@ class AIChatWidget(QWidget):
         if llm_model == "groq":
             return "llama-3.3-70b-versatile"
         return self.settings.get("gemini_model", ChatWorker.DEFAULT_MODEL)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._model_subtitle.setText(self._selected_model_name())
