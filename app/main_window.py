@@ -19,6 +19,7 @@ from app.processes_panel import ProcessesPanel
 from app.ai_chat import AIChatWidget
 from app.settings_panel import SettingsPanel
 from app.startup_panel import StartupPanel
+from app.blocked_panel import BlockedPanel
 from app.updater import UpdateChecker, UpdateDialog
 
 
@@ -37,10 +38,11 @@ def get_resource_path(relative_path):
 ASSETS_DIR = get_resource_path("assets")
 
 NAV_ITEMS = [
-    ("🖥", "Процессы",     0),
-    ("🚀", "Автозагрузка", 1),
-    ("✨", "AI-чат",       2),
-    ("⚙️", "Настройки",   3),
+    ("🖥", "Процессы",        0),
+    ("🚀", "Автозагрузка",    1),
+    ("🚫", "Заблокированные", 2),
+    ("✨", "AI-чат",          3),
+    ("⚙️", "Настройки",      4),
 ]
 
 
@@ -296,11 +298,13 @@ class MainWindow(QMainWindow):
         self._chat_panel = AIChatWidget(self.settings)
         self._settings_panel = SettingsPanel(self.settings)
         self._startup_panel = StartupPanel()
+        self._blocked_panel = BlockedPanel(self.pm)
 
         self._stack.addWidget(self._processes_panel)  # index 0 — Процессы
         self._stack.addWidget(self._startup_panel)    # index 1 — Автозагрузка
-        self._stack.addWidget(self._chat_panel)        # index 2 — AI-чат
-        self._stack.addWidget(self._settings_panel)   # index 3 — Настройки
+        self._stack.addWidget(self._blocked_panel)    # index 2 — Заблокированные
+        self._stack.addWidget(self._chat_panel)        # index 3 — AI-чат
+        self._stack.addWidget(self._settings_panel)   # index 4 — Настройки
 
         # ── Статусная строка ──────────────────────────────────────────────────
         self._status_bar = QStatusBar()
@@ -361,7 +365,7 @@ class MainWindow(QMainWindow):
 
     def _ask_ai_about_process(self, process_name: str):
         """Переключиться в чат и вставить вопрос про процесс."""
-        self._select_page(2)  # AI-чат теперь index 2
+        self._select_page(3)  # AI-чат теперь index 3
         self._chat_panel.inject_process_context(process_name)
 
     def _on_stats_updated(self, stats: dict):

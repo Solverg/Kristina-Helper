@@ -13,7 +13,7 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QTreeWidget, QTreeWidgetItem,
     QLineEdit, QHeaderView, QAbstractItemView,
-    QSlider, QFrame, QCheckBox, QMenu, QSizePolicy
+    QSlider, QFrame, QMenu, QSizePolicy
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QThread
 from PyQt6.QtGui import QColor, QFont, QAction
@@ -256,12 +256,7 @@ class ProcessesPanel(QWidget):
         self._search_input.textChanged.connect(self._filter_table)
         self._search_input.setMaximumWidth(300)
 
-        self._show_blocked_only = QCheckBox("Только заблокированные")
-        self._show_blocked_only.toggled.connect(self._filter_table)
-        self._show_blocked_only.setStyleSheet("color: #8b949e;")
-
         controls_row.addWidget(self._search_input)
-        controls_row.addWidget(self._show_blocked_only)
         controls_row.addStretch()
 
         self._btn_refresh = QPushButton("↻  Обновить")
@@ -348,12 +343,10 @@ class ProcessesPanel(QWidget):
 
     def _filter_table(self):
         query = self._search_input.text().lower()
-        only_blocked = self._show_blocked_only.isChecked()
 
         filtered = [
             p for p in self._all_processes
-            if (not query or query in p.name.lower())
-            and (not only_blocked or p.is_blocked)
+            if not query or query in p.name.lower()
         ]
         self._populate_table(filtered)
 
