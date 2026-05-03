@@ -13,7 +13,7 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QTreeWidget, QTreeWidgetItem,
     QLineEdit, QHeaderView, QAbstractItemView,
-    QSlider, QFrame, QMenu, QSizePolicy
+    QSlider, QFrame, QMenu, QSizePolicy, QCheckBox
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QThread
 from PyQt6.QtGui import QColor, QFont, QAction

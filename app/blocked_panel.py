@@ -78,11 +78,16 @@ class BlockedPanel(QWidget):
 
         # ── Таблица ──────────────────────────────────────────────────────────
         self._table = QTreeWidget()
-        self._table.setColumnCount(3)
-        self._table.setHeaderLabels(["Имя процесса", "Статус правила", "Завершено раз"])
-        self._table.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        self._table.header().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        self._table.header().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        self._table.setColumnCount(4)
+        self._table.setHeaderLabels(["Имя процесса", "Статус", "Завершено раз", "Описание"])
+        self._table.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
+        self._table.header().setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
+        self._table.header().setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)
+        self._table.header().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        self._table.header().setStretchLastSection(True)
+        self._table.setColumnWidth(0, 220)
+        self._table.setColumnWidth(1, 130)
+        self._table.setColumnWidth(2, 120)
 
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
@@ -129,15 +134,19 @@ class BlockedPanel(QWidget):
 
         for rule in sorted(rules, key=lambda r: r.name.lower()):
             status_text = "✅ Активно" if rule.enabled else "⏸ Отключено"
+            description, security_status = self._get_description_and_status(rule.name)
+            process_icon = self._get_status_icon(security_status)
             item = QTreeWidgetItem([
-                rule.name,
+                f"{process_icon}{rule.name}",
                 status_text,
                 str(rule.kill_count),
+                description,
             ])
             item.setData(0, Qt.ItemDataRole.UserRole, rule.name)
+            item.setToolTip(3, description)
 
             if not rule.enabled:
-                for col in range(3):
+                for col in range(4):
                     item.setForeground(col, QColor("#484f58"))
             else:
                 item.setForeground(1, QColor("#3fb950"))
@@ -177,3 +186,26 @@ class BlockedPanel(QWidget):
         if name:
             self.pm.remove_rule(name)
             self._refresh()
+
+    @staticmethod
+    def _get_status_icon(status: str) -> str:
+        if status == "verified":
+            return "🛡️ "
+        if status == "dangerous":
+            return "⚠️ "
+        return "❔ "
+
+    def _get_description_and_status(self, process_name: str) -> tuple[str, str]:
+        data = self.pm.process_descriptions.get(process_name.lower(), {})
+        if isinstance(data, dict):
+            description = (data.get("description") or "Нет описания").strip()
+            status = (data.get("status") or "unknown").strip().lower()
+        else:
+            description = str(data).strip() if data else "Нет описания"
+            status = "unknown"
+
+        if status not in {"verified", "dangerous", "unknown"}:
+            status = "unknown"
+        if not description:
+            description = "Нет описания"
+        return description, status
