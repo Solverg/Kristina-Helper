@@ -5,7 +5,7 @@ Kristina Helper — панель заблокированных процессо
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QTreeWidget, QTreeWidgetItem,
-    QHeaderView, QAbstractItemView, QFrame
+    QHeaderView, QAbstractItemView, QFrame, QSizePolicy
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor
@@ -93,6 +93,7 @@ class BlockedPanel(QWidget):
         self._table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._table.setRootIsDecorated(False)
+        self._table.setUniformRowHeights(False)
         self._table.setStyleSheet("""
             QTreeWidget {
                 gridline-color: rgba(139, 148, 158, 0.18);
@@ -152,8 +153,24 @@ class BlockedPanel(QWidget):
                 item.setForeground(1, QColor("#3fb950"))
 
             self._table.addTopLevelItem(item)
+            self._table.setItemWidget(item, 3, self._build_description_cell(description))
 
         self._on_selection_changed()
+
+    def _build_description_cell(self, text: str) -> QWidget:
+        cell = QWidget()
+        layout = QVBoxLayout(cell)
+        layout.setContentsMargins(4, 2, 4, 2)
+        layout.setSpacing(0)
+
+        text_label = QLabel(text)
+        text_label.setWordWrap(True)
+        text_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        text_label.setStyleSheet("color: #e6edf3; font-size: 12px;")
+        text_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+
+        layout.addWidget(text_label)
+        return cell
 
     def _on_selection_changed(self):
         has_sel = bool(self._table.selectedItems())
