@@ -6,7 +6,7 @@ import sys
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QCheckBox, QFrame, QLineEdit,
-    QSpinBox, QGroupBox, QComboBox
+    QSpinBox, QGroupBox, QComboBox, QScrollArea, QSizePolicy
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 
@@ -26,6 +26,7 @@ class SettingRow(QWidget):
 
     def __init__(self, title: str, description: str, control: QWidget, parent=None):
         super().__init__(parent)
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 8, 0, 8)
         layout.setSpacing(16)
@@ -39,12 +40,14 @@ class SettingRow(QWidget):
         d = QLabel(description)
         d.setStyleSheet("color: #8b949e; font-size: 12px;")
         d.setWordWrap(True)
+        d.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
 
         text_col.addWidget(t)
         text_col.addWidget(d)
 
         layout.addLayout(text_col, stretch=1)
         layout.addWidget(control, alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.setMinimumHeight(56)
 
 
 class SectionCard(QWidget):
@@ -53,6 +56,7 @@ class SectionCard(QWidget):
     def __init__(self, title: str, parent=None):
         super().__init__(parent)
         self.setObjectName("card")
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
         self._layout = QVBoxLayout(self)
         self._layout.setContentsMargins(20, 16, 20, 16)
         self._layout.setSpacing(0)
@@ -73,6 +77,7 @@ class ToggleSwitch(QCheckBox):
     def __init__(self, checked: bool = False, parent=None):
         super().__init__(parent)
         self.setChecked(checked)
+        self.setFixedSize(44, 24)
         self._update_style()
         self.toggled.connect(lambda: self._update_style())
 
@@ -111,10 +116,38 @@ class SettingsPanel(QWidget):
         self._build_ui()
 
     def _build_ui(self):
-        layout = QVBoxLayout(self)
+        # Внешний layout панели — только для scroll area
+        outer_layout = QVBoxLayout(self)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+        outer_layout.setSpacing(0)
+
+        # Scroll area
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll.setStyleSheet("""
+            QScrollArea { background: transparent; border: none; }
+            QScrollBar:vertical {
+                background: #0d1117; width: 6px; border-radius: 3px;
+            }
+            QScrollBar::handle:vertical {
+                background: #30363d; border-radius: 3px; min-height: 20px;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+        """)
+
+        # Контейнер внутри scroll area
+        container = QWidget()
+        container.setObjectName("scroll_container")
+        layout = QVBoxLayout(container)
         layout.setContentsMargins(24, 20, 24, 20)
         layout.setSpacing(16)
         layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+
+        scroll.setWidget(container)
+        outer_layout.addWidget(scroll)
 
         title = QLabel("⚙️ Настройки")
         title.setObjectName("section_title")
