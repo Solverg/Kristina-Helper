@@ -273,6 +273,11 @@ class ProcessesPanel(QWidget):
         self._btn_add_block.setEnabled(False)
         self._btn_add_block.clicked.connect(self._toggle_block_selected)
 
+        self._btn_add_kol = QPushButton("+ Kill-on-Launch")
+        self._btn_add_kol.setObjectName("refresh_btn")
+        self._btn_add_kol.setEnabled(False)
+        self._btn_add_kol.clicked.connect(self._toggle_kill_on_launch_selected)
+
         self._btn_ask_ai = QPushButton("✨ Спросить AI")
         self._btn_ask_ai.setObjectName("refresh_btn")
         self._btn_ask_ai.setEnabled(False)
@@ -281,6 +286,7 @@ class ProcessesPanel(QWidget):
         controls_row.addWidget(self._btn_refresh)
         controls_row.addWidget(self._btn_kill)
         controls_row.addWidget(self._btn_add_block)
+        controls_row.addWidget(self._btn_add_kol)
         controls_row.addWidget(self._btn_ask_ai)
 
         layout.addLayout(controls_row)
@@ -569,6 +575,7 @@ class ProcessesPanel(QWidget):
         p = self._get_selected_process() if has_selection else None
         self._btn_kill.setEnabled(bool(p and p.is_running and p.pid > 0))
         self._btn_add_block.setEnabled(bool(p))
+        self._btn_add_kol.setEnabled(bool(p))
         self._btn_ask_ai.setEnabled(bool(p))
 
         # Обновляем текст кнопки блокировки
@@ -579,6 +586,11 @@ class ProcessesPanel(QWidget):
             else:
                 self._btn_add_block.setText("+ Блокировать")
                 self._btn_add_block.setStyleSheet("")
+            is_kill_on_launch = False
+            if p.name:
+                rule = self.pm.block_rules.get(p.name.lower())
+                is_kill_on_launch = bool(rule and getattr(rule, "mode", "permanent") == "kill_on_launch")
+            self._btn_add_kol.setText("− Убрать Kill-on-Launch" if is_kill_on_launch else "+ Kill-on-Launch")
 
     def _kill_selected(self):
         p = self._get_selected_process()
@@ -599,6 +611,21 @@ class ProcessesPanel(QWidget):
         p = self._get_selected_process()
         if p:
             self.ask_ai_about.emit(p.name)
+
+    def _toggle_kill_on_launch_selected(self):
+        p = self._get_selected_process()
+        if not p:
+            return
+        key = p.name.lower()
+        rule = self.pm.block_rules.get(key)
+        if rule and getattr(rule, "mode", "permanent") == "kill_on_launch":
+            self.pm.remove_rule(p.name)
+        else:
+            if rule:
+                self.pm.set_rule_mode(p.name, "kill_on_launch")
+            else:
+                self.pm.add_rule(p.name, mode="kill_on_launch")
+        self._manual_refresh()
 
     def _manual_refresh(self):
         self.pm.scan_and_enforce()
@@ -642,11 +669,18 @@ class ProcessesPanel(QWidget):
         block_action = QAction(block_text, menu)
         block_action.triggered.connect(self._toggle_block_selected)
 
+        kol_rule = self.pm.block_rules.get((p.name or "").lower())
+        kol_enabled = bool(kol_rule and getattr(kol_rule, "mode", "permanent") == "kill_on_launch")
+        kol_text = "− Убрать Kill-on-Launch" if kol_enabled else "🎯 Добавить Kill-on-Launch"
+        kol_action = QAction(kol_text, menu)
+        kol_action.triggered.connect(self._toggle_kill_on_launch_selected)
+
         ai_action = QAction("✨ Спросить AI про этот процесс", menu)
         ai_action.triggered.connect(self._ask_ai_selected)
 
         menu.addAction(kill_action)
         menu.addAction(block_action)
+        menu.addAction(kol_action)
         menu.addSeparator()
         menu.addAction(ai_action)
         menu.exec(self._table.viewport().mapToGlobal(pos))

@@ -37,6 +37,7 @@ class BlockRule:
     name: str            # Имя exe (например, 'telegram.exe')
     enabled: bool = True
     kill_count: int = 0  # Сколько раз был убит
+    mode: str = "permanent"  # permanent | kill_on_launch
 
 
 class ProcessManager(QObject):
@@ -79,6 +80,8 @@ class ProcessManager(QObject):
                 with open(CONFIG_PATH, "r", encoding="utf-8") as f:
                     data = json.load(f)
                 for item in data:
+                    if "mode" not in item:
+                        item["mode"] = "permanent"
                     rule = BlockRule(**item)
                     self.block_rules[rule.name.lower()] = rule
                 logger.info(f"Загружено {len(self.block_rules)} правил")
@@ -132,15 +135,23 @@ class ProcessManager(QObject):
 
     # ── Управление правилами ─────────────────────────────────────────────────
 
-    def add_rule(self, process_name: str) -> bool:
+    def add_rule(self, process_name: str, mode: str = "permanent") -> bool:
         """Добавить процесс в список блокировки."""
         key = process_name.lower()
+        normalized_mode = "kill_on_launch" if mode == "kill_on_launch" else "permanent"
         if key not in self.block_rules:
-            self.block_rules[key] = BlockRule(name=process_name)
+            self.block_rules[key] = BlockRule(name=process_name, mode=normalized_mode)
             self.save_rules()
             logger.info(f"Добавлено правило: {process_name}")
             return True
         return False
+
+    def set_rule_mode(self, process_name: str, mode: str):
+        key = process_name.lower()
+        if key not in self.block_rules:
+            return
+        self.block_rules[key].mode = "kill_on_launch" if mode == "kill_on_launch" else "permanent"
+        self.save_rules()
 
     def remove_rule(self, process_name: str) -> bool:
         """Удалить правило блокировки."""
@@ -253,7 +264,7 @@ class ProcessManager(QObject):
             logger.warning(f"Не удалось завершить {pid}: {e}")
             return False
 
-    def scan_and_enforce(self):
+    def scan_and_enforce(self, startup_phase: bool = False):
         """
         Основной цикл:
         1. Получить список процессов
@@ -265,7 +276,11 @@ class ProcessManager(QObject):
 
         # Убиваем заблокированные
         for p in processes:
-            if p.is_blocked and p.is_running and p.pid > 0:
+            rule = self.block_rules.get((p.name or "").lower())
+            if not rule or not rule.enabled:
+                continue
+            should_kill = rule.mode == "permanent" or (rule.mode == "kill_on_launch" and startup_phase)
+            if should_kill and p.is_running and p.pid > 0:
                 self.kill_process(p.pid, p.name)
 
         # Обновляем UI

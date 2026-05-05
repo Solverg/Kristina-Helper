@@ -41,8 +41,9 @@ NAV_ITEMS = [
     ("🖥", "Процессы",        0),
     ("🚀", "Автозагрузка",    1),
     ("🚫", "Заблокированные", 2),
-    ("✨", "AI-чат",          3),
-    ("⚙️", "Настройки",      4),
+    ("🎯", "Kill-on-Launch",  3),
+    ("✨", "AI-чат",          4),
+    ("⚙️", "Настройки",      5),
 ]
 
 
@@ -299,12 +300,14 @@ class MainWindow(QMainWindow):
         self._settings_panel = SettingsPanel(self.settings)
         self._startup_panel = StartupPanel()
         self._blocked_panel = BlockedPanel(self.pm)
+        self._kill_on_launch_panel = BlockedPanel(self.pm, mode_filter="kill_on_launch")
 
         self._stack.addWidget(self._processes_panel)  # index 0 — Процессы
         self._stack.addWidget(self._startup_panel)    # index 1 — Автозагрузка
         self._stack.addWidget(self._blocked_panel)    # index 2 — Заблокированные
-        self._stack.addWidget(self._chat_panel)        # index 3 — AI-чат
-        self._stack.addWidget(self._settings_panel)   # index 4 — Настройки
+        self._stack.addWidget(self._kill_on_launch_panel)  # index 3 — Kill-on-Launch
+        self._stack.addWidget(self._chat_panel)        # index 4 — AI-чат
+        self._stack.addWidget(self._settings_panel)   # index 5 — Настройки
 
         # ── Статусная строка ──────────────────────────────────────────────────
         self._status_bar = QStatusBar()
@@ -348,7 +351,7 @@ class MainWindow(QMainWindow):
         interval = self.settings.get("scan_interval_sec", 5) * 1000
         self.pm.start_monitoring(interval)
         # Первое сканирование сразу
-        QTimer.singleShot(500, self.pm.scan_and_enforce)
+        QTimer.singleShot(500, lambda: self.pm.scan_and_enforce(startup_phase=True))
 
     def check_for_updates(self):
         current_version = QApplication.instance().applicationVersion()
@@ -365,7 +368,7 @@ class MainWindow(QMainWindow):
 
     def _ask_ai_about_process(self, process_name: str):
         """Переключиться в чат и вставить вопрос про процесс."""
-        self._select_page(3)  # AI-чат теперь index 3
+        self._select_page(4)  # AI-чат теперь index 4
         self._chat_panel.inject_process_context(process_name)
 
     def _on_stats_updated(self, stats: dict):
