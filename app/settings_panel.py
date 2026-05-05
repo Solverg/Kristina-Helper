@@ -327,7 +327,7 @@ class SettingsPanel(QWidget):
 
         lines = [
             ("Kristina Helper", "#e6edf3", "14px", "700"),
-            ("Версия 1.2.2", "#8b949e", "12px", "400"),
+            ("Версия 1.2.3", "#8b949e", "12px", "400"),
             ("Мониторинг и блокировка процессов Windows + AI-чат", "#8b949e", "12px", "400"),
         ]
         for text, color, size, weight in lines:
@@ -354,7 +354,7 @@ class SettingsPanel(QWidget):
         about_layout.addLayout(btn_row)
 
         # Зависимости
-        deps_label = QLabel("Требуется: PyQt6, psutil")
+        deps_label = QLabel("Distributed under the MIT License.")
         deps_label.setStyleSheet("color: #484f58; font-size: 11px; padding-top: 4px;")
         about_layout.addWidget(deps_label)
 
