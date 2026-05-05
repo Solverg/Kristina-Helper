@@ -273,8 +273,27 @@ class ProcessesPanel(QWidget):
         self._btn_add_block.setEnabled(False)
         self._btn_add_block.clicked.connect(self._toggle_block_selected)
 
-        self._btn_add_kol = QPushButton("+ Kill-on-Launch")
-        self._btn_add_kol.setObjectName("refresh_btn")
+        self._btn_add_kol = QPushButton("🎯 Kill-on-Launch")
+        self._btn_add_kol.setObjectName("kol_btn")
+        self._btn_add_kol.setStyleSheet("""
+            QPushButton#kol_btn {
+                background-color: #b94d00;
+                color: #ffe0c0;
+                border: 1px solid #d45f00;
+                border-radius: 8px;
+                padding: 8px 20px;
+                font-weight: 600;
+            }
+            QPushButton#kol_btn:hover {
+                background-color: #d45f00;
+                color: #ffffff;
+            }
+            QPushButton#kol_btn:disabled {
+                background-color: #3a2010;
+                color: #7a4a2a;
+                border-color: #4a2a10;
+            }
+        """)
         self._btn_add_kol.setEnabled(False)
         self._btn_add_kol.clicked.connect(self._toggle_kill_on_launch_selected)
 
@@ -365,6 +384,15 @@ class ProcessesPanel(QWidget):
         return "❔ "
 
     def _populate_table(self, processes: list[ProcessEntry]):
+        # Сохраняем позицию скролла и выбранный процесс
+        scroll_value = self._table.verticalScrollBar().value()
+        selected_key: tuple | None = None
+        selected_items = self._table.selectedItems()
+        if selected_items:
+            proc_data = selected_items[0].data(0, Qt.ItemDataRole.UserRole)
+            if isinstance(proc_data, ProcessEntry):
+                selected_key = (proc_data.name.lower(), (proc_data.exe or "").lower())
+
         # Сохраняем состояние раскрытых узлов по ключу (имя, путь)
         expanded_groups = set()
         for i in range(self._table.topLevelItemCount()):
@@ -447,6 +475,19 @@ class ProcessesPanel(QWidget):
                     if p.is_blocked:
                         for col in range(7):
                             child_item.setForeground(col, QColor("#f85149"))
+
+        # Восстанавливаем выбранный элемент
+        if selected_key:
+            for i in range(self._table.topLevelItemCount()):
+                item = self._table.topLevelItem(i)
+                proc_data = item.data(0, Qt.ItemDataRole.UserRole)
+                if isinstance(proc_data, ProcessEntry):
+                    if (proc_data.name.lower(), (proc_data.exe or "").lower()) == selected_key:
+                        self._table.setCurrentItem(item)
+                        break
+
+        # Восстанавливаем позицию скролла
+        self._table.verticalScrollBar().setValue(scroll_value)
 
     def _setup_item_ui(self, item: QTreeWidgetItem, p: ProcessEntry):
         """Устанавливает цвета и виджеты (описания, кнопки) для элемента дерева."""
@@ -590,7 +631,7 @@ class ProcessesPanel(QWidget):
             if p.name:
                 rule = self.pm.block_rules.get(p.name.lower())
                 is_kill_on_launch = bool(rule and getattr(rule, "mode", "permanent") == "kill_on_launch")
-            self._btn_add_kol.setText("− Убрать Kill-on-Launch" if is_kill_on_launch else "+ Kill-on-Launch")
+            self._btn_add_kol.setText("✖ Убрать Kill-on-Launch" if is_kill_on_launch else "🎯 Kill-on-Launch")
 
     def _kill_selected(self):
         p = self._get_selected_process()
@@ -671,7 +712,7 @@ class ProcessesPanel(QWidget):
 
         kol_rule = self.pm.block_rules.get((p.name or "").lower())
         kol_enabled = bool(kol_rule and getattr(kol_rule, "mode", "permanent") == "kill_on_launch")
-        kol_text = "− Убрать Kill-on-Launch" if kol_enabled else "🎯 Добавить Kill-on-Launch"
+        kol_text = "✖ Убрать Kill-on-Launch" if kol_enabled else "🎯 Добавить Kill-on-Launch"
         kol_action = QAction(kol_text, menu)
         kol_action.triggered.connect(self._toggle_kill_on_launch_selected)
 
