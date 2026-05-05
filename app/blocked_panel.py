@@ -132,6 +132,8 @@ class BlockedPanel(QWidget):
         rules = list(self.pm.block_rules.values())
         if self.mode_filter:
             rules = [r for r in rules if getattr(r, "mode", "permanent") == self.mode_filter]
+        else:
+            rules = [r for r in rules if getattr(r, "mode", "permanent") != "kill_on_launch"]
         self._table.clear()
 
         if not rules:
