@@ -18,9 +18,10 @@ class BlockedPanel(QWidget):
     Панель со списком заблокированных процессов (правил блокировки).
     """
 
-    def __init__(self, process_manager: ProcessManager, parent=None):
+    def __init__(self, process_manager: ProcessManager, parent=None, mode_filter: str | None = None):
         super().__init__(parent)
         self.pm = process_manager
+        self.mode_filter = mode_filter
         self._build_ui()
         self._connect_signals()
         self._refresh()
@@ -31,13 +32,21 @@ class BlockedPanel(QWidget):
         layout.setSpacing(16)
 
         # ── Заголовок ────────────────────────────────────────────────────────
-        title = QLabel("🚫 Заблокированные")
+        if self.mode_filter == "kill_on_launch":
+            title_text = "🚀 Kill-on-Launch"
+            subtitle_text = (
+                "Приложения из списка завершаются только при старте Kristina Helper.\n"
+                "После запуска их можно открыть повторно — мониторинг их не трогает."
+            )
+        else:
+            title_text = "🚫 Заблокированные"
+            subtitle_text = "Процессы из этого списка будут автоматически завершаться при обнаружении."
+
+        title = QLabel(title_text)
         title.setObjectName("section_title")
         layout.addWidget(title)
 
-        subtitle = QLabel(
-            "Процессы из этого списка будут автоматически завершаться при обнаружении."
-        )
+        subtitle = QLabel(subtitle_text)
         subtitle.setStyleSheet("color: #8b949e; font-size: 13px;")
         layout.addWidget(subtitle)
 
@@ -121,6 +130,10 @@ class BlockedPanel(QWidget):
 
     def _refresh(self):
         rules = list(self.pm.block_rules.values())
+        if self.mode_filter:
+            rules = [r for r in rules if getattr(r, "mode", "permanent") == self.mode_filter]
+        else:
+            rules = [r for r in rules if getattr(r, "mode", "permanent") != "kill_on_launch"]
         self._table.clear()
 
         if not rules:
